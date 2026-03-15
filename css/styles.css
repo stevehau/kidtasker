@@ -277,6 +277,27 @@ select.form-control { cursor: pointer; }
   transition: var(--transition);
 }
 .checklist-item:hover { border-color: var(--primary); }
+.checklist-item.dragging {
+  opacity: 0.4;
+  border-style: dashed;
+}
+.checklist-item.drag-over {
+  border-color: var(--primary);
+  border-width: 2px;
+  border-style: dashed;
+  background: var(--primary-light);
+}
+.drag-handle {
+  cursor: grab;
+  color: var(--text-light);
+  font-size: 1.1rem;
+  padding: 0 2px;
+  user-select: none;
+  opacity: 0.4;
+  transition: opacity 0.15s;
+}
+.drag-handle:hover { opacity: 1; }
+.checklist-item.dragging .drag-handle { cursor: grabbing; }
 .checklist-item .item-number {
   font-weight: 700;
   color: var(--text-light);

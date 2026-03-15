@@ -696,7 +696,8 @@ const Views = (() => {
       const days = task.daysApplicable || APP_CONFIG.daysShort;
       const daysLabel = days.length === 7 ? 'Every day' : days.join(', ');
       return html`
-      <div class="checklist-item" data-id="${task.id}">
+      <div class="checklist-item" data-id="${task.id}" draggable="true">
+        <span class="drag-handle" title="Drag to reorder">&#9776;</span>
         <span class="item-number">${i + 1}</span>
         <span class="item-text">${task.text} <span class="item-days">${daysLabel}</span></span>
         <span class="item-category">${task.category}</span>
@@ -727,6 +728,63 @@ const Views = (() => {
           $('#task-list').innerHTML = renderTaskList(tasks);
           bindTaskActions(familyId, childId);
         });
+      });
+    });
+
+    // Drag-to-reorder
+    let dragSrcEl = null;
+    document.querySelectorAll('.checklist-item[draggable]').forEach(item => {
+      item.addEventListener('dragstart', (e) => {
+        dragSrcEl = item;
+        item.classList.add('dragging');
+        e.dataTransfer.effectAllowed = 'move';
+        e.dataTransfer.setData('text/plain', item.dataset.id);
+      });
+      item.addEventListener('dragend', () => {
+        item.classList.remove('dragging');
+        document.querySelectorAll('.checklist-item').forEach(el => el.classList.remove('drag-over'));
+        dragSrcEl = null;
+      });
+      item.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+        if (item !== dragSrcEl) {
+          document.querySelectorAll('.checklist-item').forEach(el => el.classList.remove('drag-over'));
+          item.classList.add('drag-over');
+        }
+      });
+      item.addEventListener('dragleave', () => {
+        item.classList.remove('drag-over');
+      });
+      item.addEventListener('drop', async (e) => {
+        e.preventDefault();
+        item.classList.remove('drag-over');
+        if (!dragSrcEl || dragSrcEl === item) return;
+
+        // Reorder in DOM
+        const list = $('#task-list');
+        const items = Array.from(list.querySelectorAll('.checklist-item'));
+        const fromIdx = items.indexOf(dragSrcEl);
+        const toIdx = items.indexOf(item);
+        if (fromIdx < toIdx) {
+          item.parentNode.insertBefore(dragSrcEl, item.nextSibling);
+        } else {
+          item.parentNode.insertBefore(dragSrcEl, item);
+        }
+
+        // Update numbers
+        list.querySelectorAll('.checklist-item').forEach((el, i) => {
+          const numEl = el.querySelector('.item-number');
+          if (numEl) numEl.textContent = i + 1;
+        });
+
+        // Persist new order
+        const orderedIds = Array.from(list.querySelectorAll('.checklist-item')).map(el => el.dataset.id);
+        try {
+          await Store.reorderTasks(orderedIds);
+        } catch (err) {
+          console.warn('Reorder save failed:', err);
+        }
       });
     });
   }

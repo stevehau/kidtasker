@@ -232,11 +232,13 @@ const Store = (() => {
     // Task Templates
     async getTaskTemplates(familyId, childId) {
       const templates = this._getCollection('taskTemplates');
-      return templates.filter(t => t.familyId === familyId && t.childId === childId);
+      return templates.filter(t => t.familyId === familyId && t.childId === childId)
+        .sort((a, b) => (a.sortOrder ?? 999) - (b.sortOrder ?? 999));
     },
 
     async addTaskTemplate(familyId, childId, text, category, priority, daysApplicable) {
       const templates = this._getCollection('taskTemplates');
+      const existing = templates.filter(t => t.familyId === familyId && t.childId === childId);
       const task = {
         id: generateId(),
         familyId,
@@ -246,11 +248,21 @@ const Store = (() => {
         priority: priority || 'B',
         daysApplicable: daysApplicable || ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'],
         isActive: true,
+        sortOrder: existing.length,
         createdAt: new Date().toISOString()
       };
       templates.push(task);
       this._saveCollection('taskTemplates', templates);
       return task;
+    },
+
+    async reorderTasks(orderedIds) {
+      const templates = this._getCollection('taskTemplates');
+      orderedIds.forEach((id, i) => {
+        const t = templates.find(t => t.id === id);
+        if (t) t.sortOrder = i;
+      });
+      this._saveCollection('taskTemplates', templates);
     },
 
     async updateTaskTemplate(taskId, updates) {
@@ -757,18 +769,31 @@ const Store = (() => {
       const snap = await db.collection('taskTemplates')
         .where('familyId', '==', familyId)
         .where('childId', '==', childId).get();
-      return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      return snap.docs.map(d => ({ id: d.id, ...d.data() }))
+        .sort((a, b) => (a.sortOrder ?? 999) - (b.sortOrder ?? 999));
     },
 
     async addTaskTemplate(familyId, childId, text, category, priority, daysApplicable) {
+      // Get current count for sortOrder
+      const existingSnap = await db.collection('taskTemplates')
+        .where('familyId', '==', familyId)
+        .where('childId', '==', childId).get();
       const data = {
         familyId, childId, text, category: category || 'Other',
         priority: priority || 'B',
         daysApplicable: daysApplicable || ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'],
-        isActive: true, createdAt: new Date().toISOString()
+        isActive: true, sortOrder: existingSnap.size, createdAt: new Date().toISOString()
       };
       const ref = await db.collection('taskTemplates').add(data);
       return { id: ref.id, ...data };
+    },
+
+    async reorderTasks(orderedIds) {
+      const batch = db.batch();
+      orderedIds.forEach((id, i) => {
+        batch.update(db.collection('taskTemplates').doc(id), { sortOrder: i });
+      });
+      await batch.commit();
     },
 
     async updateTaskTemplate(taskId, updates) {

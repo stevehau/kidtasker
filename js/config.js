@@ -29,7 +29,7 @@ const APP_CONFIG = {
   maxItemsPerDay: 10,
   blankRowsPerDay: 3,
   defaultCategories: [
-    'Cleaning', 'School Prep', 'Personal Hygiene', 'Homework',
+    'Cleaning', 'School Prep', 'Maturity', 'Homework',
     'Chores', 'Health', 'Athletics', 'Social', 'Other'
   ],
   priorities: ['A', 'B', 'C'],
@@ -38,7 +38,7 @@ const APP_CONFIG = {
   weekStartOptions: ['monday', 'sunday'],
   defaultWeekStart: 'monday',
   defaultTasks: [
-    { text: 'Wake up on time', category: 'Personal Hygiene', priority: 'A', daysApplicable: ['Mon','Tue','Wed','Thu','Fri'] },
+    { text: 'Wake up on time', category: 'Maturity', priority: 'A', daysApplicable: ['Mon','Tue','Wed','Thu','Fri'] },
     { text: 'Pack school bag', category: 'School Prep', priority: 'A', daysApplicable: ['Mon','Tue','Wed','Thu','Fri'] },
     { text: 'Help set or clear the dinner table', category: 'Chores', priority: 'B', daysApplicable: ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'] },
     { text: 'Clean your room', category: 'Cleaning', priority: 'A', daysApplicable: ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'] },
