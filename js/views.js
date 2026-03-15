@@ -98,10 +98,9 @@ const Views = (() => {
             <a href="#/register" class="auth-link">Don't have an account? Create one</a>
             <a href="#/reset-password" class="auth-link">Forgot your password?</a>
           </div>
-          <div class="text-center" style="margin-top:8px;font-size:0.85rem">
-            <a href="privacy.html" target="_blank" class="auth-link" style="display:inline;margin:0">Privacy Policy</a>
-            <span style="color:var(--primary);margin:0 4px">&middot;</span>
-            <a href="terms.html" target="_blank" class="auth-link" style="display:inline;margin:0">Terms of Use</a>
+          <div class="text-center" style="margin-top:8px">
+            <a href="privacy.html" target="_blank" class="auth-link" style="margin:0;font-size:0.78rem">Privacy Policy</a>
+            <a href="terms.html" target="_blank" class="auth-link" style="margin:2px 0 0;font-size:0.78rem">Terms of Use</a>
           </div>
         </div>
       </div>
