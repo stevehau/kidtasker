@@ -1380,19 +1380,19 @@ const Views = (() => {
       }
 
       const detectionMethod = result.qrDetected ? 'QR code' : 'text recognition';
-      const rotationNote = detailedResult.rotation ? ` (image rotated ${detailedResult.rotation}&deg;)` : '';
+      const rotationNote = detailedResult.rotation ? ` (rotated ${detailedResult.rotation}&deg;)` : '';
+      const regMarkNote = detailedResult.regMarksFound >= 3 ? 'perspective-corrected' : 'estimated alignment';
       const itemCount = detailedResult.items ? detailedResult.items.length : 0;
 
       resultsArea.innerHTML = html`
         <div class="alert alert-success">
           <strong>Worksheet matched!</strong> ${worksheet.childName}, Week ${worksheet.weekNumber} ${worksheet.year}
-          <br><small>Form ID: ${worksheet.serialNumber} &mdash; Detected via ${detectionMethod}${rotationNote}</small>
-          <br><small>Scan archived (${captureMethod})</small>
+          <br><small>Form ID: ${worksheet.serialNumber} &mdash; ${detectionMethod}${rotationNote}, ${regMarkNote}, ${detailedResult.regMarksFound || 0}/4 reg marks</small>
         </div>
         <p class="text-muted mb-2">
-          Detected checkbox results for ${itemCount} task(s).
-          ${detailedResult.threshold ? `Detection threshold: ${(detailedResult.threshold * 100).toFixed(0)}% ink density.` : ''}
-          <br>Please review and correct the results below, then save.
+          Detected <strong>parent confirmation</strong> checkboxes for ${itemCount} task(s).
+          ${detailedResult.threshold ? `Ink threshold: ${(detailedResult.threshold * 100).toFixed(0)}%.` : ''}
+          <br><strong>Please review and correct</strong> the results below, then save.
         </p>
         <button class="btn btn-primary" id="btn-goto-results">Review &amp; Edit Results</button>
       `;

@@ -1,33 +1,13 @@
 // ============================================================
-// Kid Tasker - OCR / Scan Processor
-// Uses QR detection + pixel-based checkbox analysis
+// Kid Tasker - OCR / Scan Processor v2
+// Uses registration marks for perspective-corrected alignment
+// Only scores PARENT checkboxes (blue border boxes)
 // ============================================================
 
 const OCRProcessor = (() => {
 
-  // ---- PDF layout constants (must match pdf-generator.js) ----
-  // All values in mm, for landscape letter (279.4 x 215.9)
-  const PDF = {
-    PAGE_W: 279.4,
-    PAGE_H: 215.9,
-    MARGIN: 10,
-    CONTENT_W: 259.4,
-    COL: {
-      num:      { x: 0,   w: 5   },
-      text:     { x: 5,   w: 50  },
-      dayStart: 55,
-      dayW:     24,
-      priStart: 223,
-      priW:     36.4,
-    },
-    CB: 3.8,      // child checkbox size
-    CB_P: 3.4,    // parent checkbox size
-    TOTAL_ROWS: 10,
-  };
-
   // ---- Helpers ----
 
-  // Load image file into an HTMLImageElement
   function loadImage(file) {
     return new Promise((resolve, reject) => {
       const img = new Image();
@@ -44,19 +24,15 @@ const OCRProcessor = (() => {
     });
   }
 
-  // Draw image to canvas and return context + image data
   function imageToCanvas(img, maxDim) {
     const canvas = document.createElement('canvas');
     let w = img.naturalWidth || img.width;
     let h = img.naturalHeight || img.height;
-
-    // Scale down very large images to avoid memory issues
     if (maxDim && (w > maxDim || h > maxDim)) {
       const scale = maxDim / Math.max(w, h);
       w = Math.round(w * scale);
       h = Math.round(h * scale);
     }
-
     canvas.width = w;
     canvas.height = h;
     const ctx = canvas.getContext('2d', { willReadFrequently: true });
@@ -64,55 +40,39 @@ const OCRProcessor = (() => {
     return { canvas, ctx, width: w, height: h };
   }
 
-  // Rotate canvas by 90, 180, or 270 degrees
   function rotateCanvas(sourceCanvas, degrees) {
-    const src = sourceCanvas.getContext('2d');
     const sw = sourceCanvas.width;
     const sh = sourceCanvas.height;
     const dest = document.createElement('canvas');
     const dctx = dest.getContext('2d', { willReadFrequently: true });
-
     if (degrees === 90 || degrees === 270) {
-      dest.width = sh;
-      dest.height = sw;
+      dest.width = sh; dest.height = sw;
     } else {
-      dest.width = sw;
-      dest.height = sh;
+      dest.width = sw; dest.height = sh;
     }
-
     dctx.save();
-    if (degrees === 90) {
-      dctx.translate(sh, 0);
-    } else if (degrees === 180) {
-      dctx.translate(sw, sh);
-    } else if (degrees === 270) {
-      dctx.translate(0, sw);
-    }
+    if (degrees === 90) dctx.translate(sh, 0);
+    else if (degrees === 180) dctx.translate(sw, sh);
+    else if (degrees === 270) dctx.translate(0, sw);
     dctx.rotate((degrees * Math.PI) / 180);
     dctx.drawImage(sourceCanvas, 0, 0);
     dctx.restore();
-
     return dest;
   }
 
-  // ---- QR Code Detection ----
+  // ---- QR Code Detection (tries all 4 orientations) ----
 
-  // Scan for QR code in the image (tries multiple orientations)
   function detectQR(canvas) {
     const orientations = [0, 90, 180, 270];
     for (const deg of orientations) {
       const c = deg === 0 ? canvas : rotateCanvas(canvas, deg);
       const ctx = c.getContext('2d', { willReadFrequently: true });
       const imageData = ctx.getImageData(0, 0, c.width, c.height);
-
       if (typeof jsQR !== 'undefined') {
         const code = jsQR(imageData.data, c.width, c.height, { inversionAttempts: 'attemptBoth' });
         if (code && code.data) {
-          // Check if the data matches our Form ID pattern
           const match = code.data.match(/WSH-[A-Z]{3}-\d{4}-W\d{1,2}-[A-Z0-9]{4}/);
-          if (match) {
-            return { formId: match[0], rotation: deg, qrLocation: code.location };
-          }
+          if (match) return { formId: match[0], rotation: deg, qrLocation: code.location };
         }
       }
     }
@@ -123,201 +83,309 @@ const OCRProcessor = (() => {
 
   async function ocrFormId(canvas, onProgress) {
     if (typeof Tesseract === 'undefined') return null;
-
     try {
-      // Only OCR a small region where the Form ID text would be
-      // Try different orientations
       const orientations = [0, 90, 180, 270];
       for (const deg of orientations) {
         const c = deg === 0 ? canvas : rotateCanvas(canvas, deg);
-        const w = c.width;
-        const h = c.height;
-
-        // The Form ID appears in the top-right area and bottom-left of the PDF
-        // Sample a strip from the top 15% of the image
+        const w = c.width, h = c.height;
         const regionCanvas = document.createElement('canvas');
         const regionH = Math.round(h * 0.15);
-        regionCanvas.width = w;
-        regionCanvas.height = regionH;
+        regionCanvas.width = w; regionCanvas.height = regionH;
         const rctx = regionCanvas.getContext('2d');
         rctx.drawImage(c, 0, 0, w, regionH, 0, 0, w, regionH);
-
         const worker = await Tesseract.createWorker('eng', 1, {
-          logger: m => {
-            if (onProgress && m.status === 'recognizing text') {
-              onProgress(Math.round(m.progress * 50 + deg / 270 * 20));
-            }
-          }
+          logger: m => { if (onProgress && m.status === 'recognizing text') onProgress(Math.round(m.progress * 50 + deg / 270 * 20)); }
         });
         const { data } = await worker.recognize(regionCanvas);
         await worker.terminate();
-
         const match = data.text.match(/WSH-[A-Z]{3}-\d{4}-W\d{1,2}-[A-Z0-9]{4}/);
-        if (match) {
-          return { formId: match[0], rotation: deg };
-        }
+        if (match) return { formId: match[0], rotation: deg };
       }
-    } catch (e) {
-      console.warn('OCR Form ID detection failed:', e);
-    }
+    } catch (e) { console.warn('OCR Form ID detection failed:', e); }
     return null;
   }
 
-  // ---- Orientation & Alignment ----
+  // ---- Registration Mark Detection ----
 
-  // Determine if the scanned image is landscape or portrait
-  // and what rotation is needed to match the PDF layout
-  function detectOrientation(canvas, qrResult) {
-    const w = canvas.width;
-    const h = canvas.height;
+  // Scan a region of the image for an L-shaped corner mark
+  // Returns the precise pixel coordinate of the mark's corner point
+  function findLMark(ctx, searchX, searchY, searchW, searchH, imgW, imgH, cornerType) {
+    // cornerType: 'TL' (top-left), 'TR', 'BL', 'BR'
+    // Extract the search region
+    const x0 = Math.max(0, Math.round(searchX));
+    const y0 = Math.max(0, Math.round(searchY));
+    const w = Math.min(Math.round(searchW), imgW - x0);
+    const h = Math.min(Math.round(searchH), imgH - y0);
+    if (w <= 0 || h <= 0) return null;
 
-    if (qrResult && qrResult.rotation !== undefined) {
-      return qrResult.rotation;
+    const imageData = ctx.getImageData(x0, y0, w, h);
+    const data = imageData.data;
+
+    // Create binary dark pixel map
+    const dark = new Uint8Array(w * h);
+    for (let i = 0; i < w * h; i++) {
+      const r = data[i * 4], g = data[i * 4 + 1], b = data[i * 4 + 2];
+      dark[i] = ((r + g + b) / 3 < 100) ? 1 : 0;
     }
 
-    // The PDF is landscape (wider than tall)
-    // If the scan is portrait (taller than wide), it's likely rotated 90 or 270
-    if (h > w * 1.1) {
-      // Portrait scan of landscape doc — most likely rotated 90° CW
-      return 90;
-    }
-    return 0;
-  }
+    // Scan for the densest cluster of dark pixels in a sliding window
+    // The L-mark arm is about REG_MARK_SIZE mm ~ some pixels
+    const markPxApprox = Math.round(w * 0.25); // approximate mark size in pixels
+    const winSize = Math.max(4, Math.round(markPxApprox));
+    let bestScore = 0, bestX = 0, bestY = 0;
 
-  // ---- Checkbox Detection via Pixel Analysis ----
-
-  // Convert mm position in the PDF to pixel position in the scanned image
-  function mmToPixel(mmX, mmY, imgW, imgH) {
-    const scaleX = imgW / PDF.PAGE_W;
-    const scaleY = imgH / PDF.PAGE_H;
-    return {
-      x: Math.round(mmX * scaleX),
-      y: Math.round(mmY * scaleY)
-    };
-  }
-
-  // Measure the "darkness" of a rectangular region (0 = white, 1 = black)
-  function measureDarkness(ctx, x, y, w, h, imgW, imgH) {
-    // Clamp to image bounds
-    const x0 = Math.max(0, Math.min(Math.round(x), imgW - 1));
-    const y0 = Math.max(0, Math.min(Math.round(y), imgH - 1));
-    const x1 = Math.max(0, Math.min(Math.round(x + w), imgW));
-    const y1 = Math.max(0, Math.min(Math.round(y + h), imgH));
-    const rw = x1 - x0;
-    const rh = y1 - y0;
-    if (rw <= 0 || rh <= 0) return 0;
-
-    try {
-      const imageData = ctx.getImageData(x0, y0, rw, rh);
-      const data = imageData.data;
-      let darkPixels = 0;
-      const totalPixels = rw * rh;
-
-      for (let i = 0; i < data.length; i += 4) {
-        const r = data[i], g = data[i + 1], b = data[i + 2];
-        const brightness = (r + g + b) / 3;
-        // A dark pixel (pen mark) — threshold ~140
-        if (brightness < 140) {
-          darkPixels++;
+    const stepSize = Math.max(1, Math.round(winSize / 4));
+    for (let sy = 0; sy < h - winSize; sy += stepSize) {
+      for (let sx = 0; sx < w - winSize; sx += stepSize) {
+        let score = 0;
+        for (let dy = 0; dy < winSize; dy++) {
+          for (let dx = 0; dx < winSize; dx++) {
+            score += dark[(sy + dy) * w + (sx + dx)];
+          }
+        }
+        if (score > bestScore) {
+          bestScore = score;
+          bestX = sx;
+          bestY = sy;
         }
       }
-      return darkPixels / totalPixels;
-    } catch (e) {
-      return 0;
     }
+
+    // Minimum threshold: at least 5% of the window should be dark
+    if (bestScore < winSize * winSize * 0.05) return null;
+
+    // Refine: find exact corner of the L-mark
+    // For TL mark, the corner is at the top-left of the dark cluster
+    // For TR mark, the corner is at the top-right, etc.
+    let cornerX, cornerY;
+
+    // Scan the found region more precisely
+    const regionSize = winSize * 2;
+    const rx0 = Math.max(0, bestX - winSize / 2);
+    const ry0 = Math.max(0, bestY - winSize / 2);
+    const rx1 = Math.min(w, bestX + regionSize);
+    const ry1 = Math.min(h, bestY + regionSize);
+
+    // Find the bounding box of dark pixels in this region
+    let minDX = rx1, minDY = ry1, maxDX = rx0, maxDY = ry0;
+    for (let dy = Math.round(ry0); dy < Math.round(ry1); dy++) {
+      for (let dx = Math.round(rx0); dx < Math.round(rx1); dx++) {
+        if (dark[dy * w + dx]) {
+          minDX = Math.min(minDX, dx);
+          minDY = Math.min(minDY, dy);
+          maxDX = Math.max(maxDX, dx);
+          maxDY = Math.max(maxDY, dy);
+        }
+      }
+    }
+
+    // The corner point depends on which corner we're looking for
+    switch (cornerType) {
+      case 'TL': cornerX = minDX; cornerY = minDY; break;
+      case 'TR': cornerX = maxDX; cornerY = minDY; break;
+      case 'BL': cornerX = minDX; cornerY = maxDY; break;
+      case 'BR': cornerX = maxDX; cornerY = maxDY; break;
+    }
+
+    return { x: x0 + cornerX, y: y0 + cornerY };
   }
 
-  // Measure darkness inside a checkbox region, shrinking slightly to avoid the border
-  function measureCheckbox(ctx, centerXmm, centerYmm, sizeMm, imgW, imgH) {
-    // Shrink the sample region to the inner ~60% of the checkbox to avoid border ink
-    const innerSize = sizeMm * 0.55;
-    const topLeftMm = {
-      x: centerXmm - innerSize / 2,
-      y: centerYmm - innerSize / 2
+  // Find all 4 registration marks in the image
+  function findRegistrationMarks(ctx, imgW, imgH) {
+    // Search in corner regions (20% of each dimension)
+    const searchFrac = 0.20;
+    const sw = Math.round(imgW * searchFrac);
+    const sh = Math.round(imgH * searchFrac);
+
+    const tl = findLMark(ctx, 0, 0, sw, sh, imgW, imgH, 'TL');
+    const tr = findLMark(ctx, imgW - sw, 0, sw, sh, imgW, imgH, 'TR');
+    const bl = findLMark(ctx, 0, imgH - sh, sw, sh, imgW, imgH, 'BL');
+    const br = findLMark(ctx, imgW - sw, imgH - sh, sw, sh, imgW, imgH, 'BR');
+
+    const found = [tl, tr, bl, br].filter(m => m !== null).length;
+    console.log(`[OCR] Registration marks found: ${found}/4`, { tl, tr, bl, br });
+
+    return { tl, tr, bl, br, count: found };
+  }
+
+  // ---- Perspective Transform ----
+
+  // Given 4 source points (in image pixels) and 4 destination points (in mm),
+  // compute a bilinear mapping from mm -> pixels
+  function createPerspectiveMapper(srcPoints, dstPoints) {
+    // srcPoints: { tl, tr, bl, br } in pixel coordinates
+    // dstPoints: { tl, tr, bl, br } in mm coordinates
+    // Returns a function that maps (mmX, mmY) -> { px, py }
+
+    const src = srcPoints;
+    const dst = dstPoints;
+
+    // Compute the normalized position (u, v) in [0,1] from mm coordinates
+    // Then bilinearly interpolate the pixel coordinates
+    const dstW = dst.tr.x - dst.tl.x;
+    const dstH = dst.bl.y - dst.tl.y;
+
+    return function mapMmToPixel(mmX, mmY) {
+      // Normalize to [0,1] based on the registration mark positions
+      const u = (mmX - dst.tl.x) / dstW;
+      const v = (mmY - dst.tl.y) / dstH;
+
+      // Bilinear interpolation of pixel coordinates
+      const topX = src.tl.x + (src.tr.x - src.tl.x) * u;
+      const topY = src.tl.y + (src.tr.y - src.tl.y) * u;
+      const botX = src.bl.x + (src.br.x - src.bl.x) * u;
+      const botY = src.bl.y + (src.br.y - src.bl.y) * u;
+
+      return {
+        x: Math.round(topX + (botX - topX) * v),
+        y: Math.round(topY + (botY - topY) * v)
+      };
     };
-    const topLeftPx = mmToPixel(topLeftMm.x, topLeftMm.y, imgW, imgH);
-    const sizePx = mmToPixel(innerSize, innerSize, imgW, imgH);
-
-    return measureDarkness(ctx, topLeftPx.x, topLeftPx.y, sizePx.x, sizePx.y, imgW, imgH);
   }
 
-  // ---- Main Analysis: locate checkboxes and read them ----
+  // Simple mm-to-pixel mapping (no perspective correction, used as fallback)
+  function createSimpleMapper(imgW, imgH, pageW, pageH) {
+    const scaleX = imgW / pageW;
+    const scaleY = imgH / pageH;
+    return function mapMmToPixel(mmX, mmY) {
+      return { x: Math.round(mmX * scaleX), y: Math.round(mmY * scaleY) };
+    };
+  }
 
-  function analyzeCheckboxes(canvas, worksheet, headerEndMm, rowHMm) {
-    const ctx = canvas.getContext('2d', { willReadFrequently: true });
-    const imgW = canvas.width;
-    const imgH = canvas.height;
+  // ---- Checkbox Detection ----
+
+  function measureDarknessAtPx(ctx, cx, cy, radiusPx, imgW, imgH) {
+    // Sample a square region around center point
+    const r = Math.max(2, Math.round(radiusPx));
+    const x0 = Math.max(0, cx - r);
+    const y0 = Math.max(0, cy - r);
+    const x1 = Math.min(imgW, cx + r);
+    const y1 = Math.min(imgH, cy + r);
+    const w = x1 - x0;
+    const h = y1 - y0;
+    if (w <= 0 || h <= 0) return 0;
+
+    try {
+      const imageData = ctx.getImageData(x0, y0, w, h);
+      const data = imageData.data;
+      let darkPixels = 0;
+      const total = w * h;
+      for (let i = 0; i < data.length; i += 4) {
+        const brightness = (data[i] + data[i + 1] + data[i + 2]) / 3;
+        if (brightness < 130) darkPixels++;
+      }
+      return darkPixels / total;
+    } catch (e) { return 0; }
+  }
+
+  // ---- Main Checkbox Analysis ----
+
+  function analyzeCheckboxes(ctx, imgW, imgH, worksheet, mapper) {
+    const L = PDFGenerator.layout;
     const items = worksheet.items || [];
     const days = APP_CONFIG.daysShort;
-    const totalRows = PDF.TOTAL_ROWS;
 
-    // Table header is 10mm tall (from drawTableHeader)
-    const tableHeaderH = 10;
-    const dataStartY = headerEndMm + tableHeaderH;
+    // We need to know where the table data starts
+    // Estimate header end from PDF layout (same logic as pdf-generator)
+    const barH = 9, infoH = 9, qrSize = 13, statsH = 15;
+    const infoY = L.MARGIN + barH + 0.5;
+    const qrY = infoY + infoH + 0.5;
+    const statsY = qrY;
+    const headerEnd = Math.max(statsY + statsH + 1, qrY + qrSize + 1);
+    const tableHeaderH = 9;
+    const footerReserve = 8;
+    const dataStartY = headerEnd + tableHeaderH;
+    const availableH = L.PAGE_H - L.MARGIN - footerReserve - (headerEnd - L.MARGIN) - tableHeaderH;
+    const rowH = Math.min(Math.max(availableH / L.TOTAL_ROWS, 5.5), 11);
 
+    // Also try to detect the blue header bar for better alignment
+    const blueBar = findBlueHeaderBar(ctx, imgW, imgH, mapper);
+    let actualDataStartY = dataStartY;
+    let actualRowH = rowH;
+
+    if (blueBar) {
+      actualDataStartY = blueBar.bottomMm;
+      const actualAvailableH = L.PAGE_H - L.MARGIN - footerReserve - blueBar.bottomMm;
+      actualRowH = Math.min(Math.max(actualAvailableH / L.TOTAL_ROWS, 5.5), 11);
+      console.log(`[OCR] Blue bar at ${blueBar.topMm.toFixed(1)}-${blueBar.bottomMm.toFixed(1)}mm, rowH=${actualRowH.toFixed(1)}`);
+    }
+
+    // Compute pixel size of checkbox inner region for sampling
+    // Parent checkbox is CB_P mm, sample inner 55%
+    const sampleSizeMm = L.CB_P * 0.55;
+    // Map to get approximate pixel size
+    const p1 = mapper(0, 0);
+    const p2 = mapper(sampleSizeMm, 0);
+    const sampleRadiusPx = Math.abs(p2.x - p1.x) / 2;
+
+    const darknessValues = [];
     const results = [];
-    const darknessValues = []; // collect all values for adaptive thresholding
 
-    // First pass: measure all checkbox darkness values
+    // First pass: measure darkness at each PARENT checkbox center
     for (let row = 0; row < items.length; row++) {
       const item = items[row];
       const applicableDays = item.daysApplicable || days;
-      const rowY = dataStartY + row * rowHMm;
-      const midY = rowY + rowHMm / 2;
+      const rowY = actualDataStartY + row * actualRowH;
+      const midY = rowY + actualRowH / 2;
 
       for (let d = 0; d < 7; d++) {
         const dayName = days[d];
         if (!applicableDays.includes(dayName)) continue;
 
-        const dayX = PDF.MARGIN + PDF.COL.dayStart + d * PDF.COL.dayW;
-        const halfW = PDF.COL.dayW / 2;
+        const dayX = L.MARGIN + L.COL.dayStart + d * L.COL.dayW;
+        const halfW = L.COL.dayW / 2;
 
-        // Child checkbox center
-        const childCX = dayX + halfW / 2;
-        const childDark = measureCheckbox(ctx, childCX, midY, PDF.CB, imgW, imgH);
-        darknessValues.push({ row, day: d, type: 'child', value: childDark });
+        // Parent checkbox center (right half of day column)
+        const parentCenterMmX = dayX + halfW + halfW / 2;
+        const parentCenterMmY = midY;
 
-        // Parent checkbox center
-        const parentCX = dayX + halfW + halfW / 2;
-        const parentDark = measureCheckbox(ctx, parentCX, midY, PDF.CB_P, imgW, imgH);
-        darknessValues.push({ row, day: d, type: 'parent', value: parentDark });
+        const parentPx = mapper(parentCenterMmX, parentCenterMmY);
+        const parentDark = measureDarknessAtPx(ctx, parentPx.x, parentPx.y, sampleRadiusPx, imgW, imgH);
+        darknessValues.push({ row, day: d, type: 'parent', value: parentDark, px: parentPx });
+
+        // Also measure child checkbox for display (left half)
+        const childCenterMmX = dayX + halfW / 2;
+        const childPx = mapper(childCenterMmX, parentCenterMmY);
+        const childDark = measureDarknessAtPx(ctx, childPx.x, childPx.y, sampleRadiusPx, imgW, imgH);
+        darknessValues.push({ row, day: d, type: 'child', value: childDark, px: childPx });
       }
     }
 
-    // Adaptive threshold: use the distribution of darkness values
-    // Empty checkboxes should be ~0.02-0.08 (just border bleed)
-    // Checked checkboxes should be ~0.15-0.60+ (pen marks)
-    const values = darknessValues.map(v => v.value).sort((a, b) => a - b);
-    let threshold = 0.12; // default
+    // Adaptive threshold using Otsu-like approach on PARENT values only
+    const parentValues = darknessValues.filter(v => v.type === 'parent').map(v => v.value).sort((a, b) => a - b);
+    let threshold = 0.12;
 
-    if (values.length > 4) {
-      // Use Otsu-like approach: find the best split point
-      const median = values[Math.floor(values.length / 2)];
-      const q25 = values[Math.floor(values.length * 0.25)];
-      const q75 = values[Math.floor(values.length * 0.75)];
-
-      // If there's a clear bimodal split, use midpoint
-      if (q75 > q25 * 2.5 && q75 > 0.1) {
-        threshold = (q25 + q75) / 2;
-      } else {
-        // Otherwise use a fixed threshold slightly above noise
-        threshold = Math.max(0.10, q25 * 2.0);
+    if (parentValues.length > 4) {
+      // Find best split using between-class variance
+      let bestThresh = 0.12, bestVariance = 0;
+      for (let t = 0.05; t <= 0.50; t += 0.01) {
+        const below = parentValues.filter(v => v <= t);
+        const above = parentValues.filter(v => v > t);
+        if (below.length === 0 || above.length === 0) continue;
+        const meanBelow = below.reduce((s, v) => s + v, 0) / below.length;
+        const meanAbove = above.reduce((s, v) => s + v, 0) / above.length;
+        const variance = below.length * above.length * Math.pow(meanAbove - meanBelow, 2);
+        if (variance > bestVariance) {
+          bestVariance = variance;
+          bestThresh = t;
+        }
       }
-      // Clamp threshold to reasonable range
-      threshold = Math.max(0.08, Math.min(threshold, 0.35));
+      threshold = bestThresh;
+      // Ensure reasonable range
+      threshold = Math.max(0.08, Math.min(threshold, 0.40));
     }
 
-    console.log('[OCR] Checkbox darkness stats:', {
-      min: values[0]?.toFixed(3),
-      q25: values[Math.floor(values.length * 0.25)]?.toFixed(3),
-      median: values[Math.floor(values.length / 2)]?.toFixed(3),
-      q75: values[Math.floor(values.length * 0.75)]?.toFixed(3),
-      max: values[values.length - 1]?.toFixed(3),
+    console.log('[OCR] Parent checkbox darkness stats:', {
+      min: parentValues[0]?.toFixed(3),
+      q25: parentValues[Math.floor(parentValues.length * 0.25)]?.toFixed(3),
+      median: parentValues[Math.floor(parentValues.length / 2)]?.toFixed(3),
+      q75: parentValues[Math.floor(parentValues.length * 0.75)]?.toFixed(3),
+      max: parentValues[parentValues.length - 1]?.toFixed(3),
       threshold: threshold.toFixed(3),
-      count: values.length
+      count: parentValues.length
     });
 
-    // Second pass: classify each checkbox
+    // Second pass: classify
     for (let row = 0; row < items.length; row++) {
       const item = items[row];
       const applicableDays = item.daysApplicable || days;
@@ -327,111 +395,68 @@ const OCRProcessor = (() => {
         const dayName = days[d];
         if (!applicableDays.includes(dayName)) continue;
 
-        const childEntry = darknessValues.find(v => v.row === row && v.day === d && v.type === 'child');
         const parentEntry = darknessValues.find(v => v.row === row && v.day === d && v.type === 'parent');
+        const childEntry = darknessValues.find(v => v.row === row && v.day === d && v.type === 'child');
 
-        const childChecked = childEntry && childEntry.value > threshold;
+        // Only parent checkbox determines the score
         const parentChecked = parentEntry && parentEntry.value > threshold;
 
         rowResults[dayName] = {
-          completed: childChecked || false,
+          completed: parentChecked || false,
           confirmed: parentChecked || false,
-          childDarkness: childEntry ? childEntry.value : 0,
           parentDarkness: parentEntry ? parentEntry.value : 0,
+          childDarkness: childEntry ? childEntry.value : 0,
         };
       }
 
-      results.push({
-        index: row,
-        text: item.text,
-        results: rowResults
-      });
+      results.push({ index: row, text: item.text, results: rowResults });
     }
 
     return { results, threshold, darknessValues };
   }
 
-  // ---- Estimate header end position ----
-  // This depends on whether gamification stats are shown.
-  // We can estimate based on the PDF layout:
-  // - Title bar: 9mm
-  // - Info strip: 9mm + 0.5 gap
-  // - QR code area: 13mm + gaps
-  // - Stats banner (if present): ~15mm
-  // Without stats: headerEnd ≈ 10 + 9 + 0.5 + 9 + 0.5 + 13 + 1 = ~43mm
-  // With stats:    headerEnd ≈ 10 + 9 + 0.5 + 9 + 0.5 + 15 + 1 = ~45mm
-  // We'll estimate based on available space
+  // ---- Blue Header Bar Detection (improved with mapper) ----
 
-  function estimateLayout(worksheet) {
-    // Replicate the header end calculation from pdf-generator
-    const MARGIN = PDF.MARGIN;
-    const barH = 9;
-    const infoH = 9;
-    const qrSize = 13;
+  function findBlueHeaderBar(ctx, imgW, imgH, mapper) {
+    // Use the mapper to convert expected blue bar position to pixels
+    const L = PDFGenerator.layout;
+    const barH = 9, infoH = 9, qrSize = 13, statsH = 15;
+    const infoY = L.MARGIN + barH + 0.5;
+    const expectedBarTopMm = Math.max(infoY + infoH + 0.5 + statsH + 1, infoY + infoH + 0.5 + qrSize + 1);
 
-    const infoY = MARGIN + barH + 0.5;
-    const qrY = infoY + infoH + 0.5;
-    const statsY = qrY; // stats starts at same Y as QR
+    // Search in a range around the expected position
+    const searchStartMm = expectedBarTopMm - 5;
+    const searchEndMm = expectedBarTopMm + 10;
 
-    // Check if there would be stats (we don't know for sure, but estimate)
-    // If the worksheet has been printed from a state with previous data, stats are likely
-    const statsH = 15;
-    const hasStats = true; // assume stats are present (worst case we're a bit off)
+    const startPx = mapper ? mapper(L.MARGIN, searchStartMm) : { y: Math.round(searchStartMm / L.PAGE_H * imgH) };
+    const endPx = mapper ? mapper(L.MARGIN, searchEndMm) : { y: Math.round(searchEndMm / L.PAGE_H * imgH) };
 
-    const headerEnd = hasStats
-      ? Math.max(statsY + statsH + 1, qrY + qrSize + 1)
-      : qrY + qrSize + 1;
-
-    // Calculate row height
-    const tableHeaderH = 10; // matches drawTableHeader rowH
-    const footerReserve = 8;
-    const availableH = PDF.PAGE_H - MARGIN - footerReserve - (headerEnd - MARGIN) - tableHeaderH;
-    const rowH = Math.min(Math.max(availableH / PDF.TOTAL_ROWS, 5.5), 11);
-
-    return { headerEnd, rowH, tableHeaderH };
-  }
-
-  // ---- Find the blue header bar to precisely locate the table ----
-
-  function findBlueHeaderBar(ctx, imgW, imgH) {
-    // Scan from ~15% to ~35% from top looking for a horizontal blue bar
-    // The table header is a solid blue (#4A6CF7 = rgb(74,108,247)) bar
-    const startRow = Math.round(imgH * 0.12);
-    const endRow = Math.round(imgH * 0.45);
-    const sampleCols = 20; // sample across the width
-
-    for (let row = startRow; row < endRow; row += 2) {
+    for (let row = startPx.y; row < Math.min(endPx.y, imgH - 1); row += 2) {
       let blueCount = 0;
+      const sampleCols = 20;
       for (let c = 0; c < sampleCols; c++) {
         const x = Math.round((c + 0.5) / sampleCols * imgW * 0.8 + imgW * 0.1);
+        if (x >= imgW) continue;
         const pixel = ctx.getImageData(x, row, 1, 1).data;
         const r = pixel[0], g = pixel[1], b = pixel[2];
-        // Detect blue-ish pixels (the header bar is a strong blue)
-        if (b > 150 && b > r * 1.3 && b > g * 1.1) {
-          blueCount++;
-        }
+        if (b > 150 && b > r * 1.3 && b > g * 1.1) blueCount++;
       }
-      // If most sample points are blue, we found the header bar
       if (blueCount > sampleCols * 0.6) {
-        // Find the bottom edge of this blue bar
         let barBottom = row;
         for (let r2 = row; r2 < Math.min(row + Math.round(imgH * 0.08), imgH); r2++) {
           let stillBlue = 0;
           for (let c = 0; c < 10; c++) {
             const x = Math.round((c + 0.5) / 10 * imgW * 0.6 + imgW * 0.2);
+            if (x >= imgW) continue;
             const pixel = ctx.getImageData(x, r2, 1, 1).data;
             if (pixel[2] > 150 && pixel[2] > pixel[0] * 1.3) stillBlue++;
           }
-          if (stillBlue > 5) {
-            barBottom = r2;
-          } else {
-            break;
-          }
+          if (stillBlue > 5) barBottom = r2;
+          else break;
         }
-        // Convert pixel Y to mm
-        const barTopMm = (row / imgH) * PDF.PAGE_H;
-        const barBottomMm = (barBottom / imgH) * PDF.PAGE_H;
-        return { topMm: barTopMm, bottomMm: barBottomMm, topPx: row, bottomPx: barBottom };
+        const topMm = (row / imgH) * L.PAGE_H;
+        const bottomMm = (barBottom / imgH) * L.PAGE_H;
+        return { topMm, bottomMm, topPx: row, bottomPx: barBottom };
       }
     }
     return null;
@@ -443,78 +468,79 @@ const OCRProcessor = (() => {
     async processImage(imageFile, worksheet, onProgress) {
       try {
         if (onProgress) onProgress(5);
+        const L = PDFGenerator.layout;
 
         // Step 1: Load image
         const img = await loadImage(imageFile);
-        let { canvas } = imageToCanvas(img, 3000); // cap at 3000px max dimension
-
+        let { canvas } = imageToCanvas(img, 3000);
         if (onProgress) onProgress(10);
 
         // Step 2: Detect QR code (tries all 4 orientations)
         let qrResult = detectQR(canvas);
         if (onProgress) onProgress(25);
 
-        // Step 3: Determine orientation and rotate if needed
-        const rotation = detectOrientation(canvas, qrResult);
+        // Step 3: Determine orientation and rotate
+        const rotation = qrResult ? qrResult.rotation : (canvas.height > canvas.width * 1.1 ? 90 : 0);
         if (rotation !== 0) {
           canvas = rotateCanvas(canvas, rotation);
         }
-
-        // If QR was found in a different orientation, re-detect in corrected canvas
-        // (to get proper location coordinates)
-        if (rotation !== 0 && qrResult && qrResult.rotation !== rotation) {
-          // QR was found, rotation applied; re-detect not needed since we have the Form ID
-        }
-
         if (onProgress) onProgress(30);
 
-        // Step 4: If no QR found, try Tesseract OCR on small region
+        // Step 4: Try Tesseract if no QR
         let formId = qrResult ? qrResult.formId : null;
         if (!formId) {
           const ocrResult = await ocrFormId(canvas, onProgress);
-          if (ocrResult) {
-            formId = ocrResult.formId;
-          }
+          if (ocrResult) formId = ocrResult.formId;
         }
-
         if (onProgress) onProgress(50);
 
-        // Step 5: If we have a worksheet, analyze checkboxes
-        let checkboxResults = null;
-        if (worksheet && worksheet.items && worksheet.items.length > 0) {
-          if (onProgress) onProgress(60);
+        // Step 5: Find registration marks for perspective correction
+        const ctx = canvas.getContext('2d', { willReadFrequently: true });
+        const imgW = canvas.width;
+        const imgH = canvas.height;
 
-          const ctx = canvas.getContext('2d', { willReadFrequently: true });
-          const imgW = canvas.width;
-          const imgH = canvas.height;
+        const regMarks = findRegistrationMarks(ctx, imgW, imgH);
+        if (onProgress) onProgress(60);
 
-          // Try to find the blue table header bar for precise alignment
-          const blueBar = findBlueHeaderBar(ctx, imgW, imgH);
-
-          let headerEndMm, rowH;
-          if (blueBar) {
-            // The blue bar IS the table header; data starts right after it
-            headerEndMm = blueBar.topMm; // this is where drawTableHeader starts
-            const tableHeaderH = blueBar.bottomMm - blueBar.topMm;
-            const footerReserve = 8;
-            const availableH = PDF.PAGE_H - PDF.MARGIN - footerReserve - (headerEndMm - PDF.MARGIN) - tableHeaderH;
-            rowH = Math.min(Math.max(availableH / PDF.TOTAL_ROWS, 5.5), 11);
-
-            // Adjust headerEndMm to be the top of the table (before the header row)
-            // since analyzeCheckboxes adds tableHeaderH internally
-            console.log('[OCR] Blue bar detected at', blueBar.topMm.toFixed(1), '-', blueBar.bottomMm.toFixed(1), 'mm, rowH=', rowH.toFixed(1));
-          } else {
-            // Fall back to estimated layout
-            const layout = estimateLayout(worksheet);
-            headerEndMm = layout.headerEnd;
-            rowH = layout.rowH;
-            console.log('[OCR] Using estimated layout: headerEnd=', headerEndMm.toFixed(1), 'mm, rowH=', rowH.toFixed(1));
+        // Step 6: Create coordinate mapper
+        let mapper;
+        if (regMarks.count >= 3) {
+          // Fill in any missing mark by estimating from the others
+          const marks = { ...regMarks };
+          if (!marks.tl && marks.tr && marks.bl) {
+            marks.tl = { x: marks.bl.x, y: marks.tr.y };
+          } else if (!marks.tr && marks.tl && marks.br) {
+            marks.tr = { x: marks.br.x, y: marks.tl.y };
+          } else if (!marks.bl && marks.tl && marks.br) {
+            marks.bl = { x: marks.tl.x, y: marks.br.y };
+          } else if (!marks.br && marks.tr && marks.bl) {
+            marks.br = { x: marks.tr.x, y: marks.bl.y };
           }
 
+          if (marks.tl && marks.tr && marks.bl && marks.br) {
+            const srcPoints = { tl: marks.tl, tr: marks.tr, bl: marks.bl, br: marks.br };
+            const dstPoints = {
+              tl: { x: L.REG_MARKS.topLeft.x, y: L.REG_MARKS.topLeft.y },
+              tr: { x: L.REG_MARKS.topRight.x + L.REG_MARK_SIZE, y: L.REG_MARKS.topRight.y },
+              bl: { x: L.REG_MARKS.bottomLeft.x, y: L.REG_MARKS.bottomLeft.y + L.REG_MARK_SIZE },
+              br: { x: L.REG_MARKS.bottomRight.x + L.REG_MARK_SIZE, y: L.REG_MARKS.bottomRight.y + L.REG_MARK_SIZE },
+            };
+            mapper = createPerspectiveMapper(srcPoints, dstPoints);
+            console.log('[OCR] Using perspective-corrected mapping from registration marks');
+          } else {
+            mapper = createSimpleMapper(imgW, imgH, L.PAGE_W, L.PAGE_H);
+            console.log('[OCR] Falling back to simple coordinate mapping');
+          }
+        } else {
+          mapper = createSimpleMapper(imgW, imgH, L.PAGE_W, L.PAGE_H);
+          console.log('[OCR] No registration marks found, using simple mapping');
+        }
+
+        // Step 7: Analyze checkboxes
+        let checkboxResults = null;
+        if (worksheet && worksheet.items && worksheet.items.length > 0) {
           if (onProgress) onProgress(70);
-
-          checkboxResults = analyzeCheckboxes(canvas, worksheet, headerEndMm, rowH);
-
+          checkboxResults = analyzeCheckboxes(ctx, imgW, imgH, worksheet, mapper);
           if (onProgress) onProgress(90);
         }
 
@@ -525,42 +551,32 @@ const OCRProcessor = (() => {
           serialNumber: formId,
           rotation: rotation,
           qrDetected: !!qrResult,
+          regMarksFound: regMarks.count,
           items: checkboxResults ? checkboxResults.results : [],
           threshold: checkboxResults ? checkboxResults.threshold : null,
           rawDarkness: checkboxResults ? checkboxResults.darknessValues : [],
-          canvasWidth: canvas.width,
-          canvasHeight: canvas.height,
+          canvasWidth: imgW,
+          canvasHeight: imgH,
         };
 
       } catch (error) {
         console.error('[OCR] Processing error:', error);
-        return {
-          success: false,
-          error: error.message
-        };
+        return { success: false, error: error.message };
       }
     },
 
-    // Manual entry helper - creates results structure for a worksheet
     createManualResults(worksheet, dayResults) {
       const items = worksheet.items.map((item, idx) => ({
-        index: idx,
-        text: item.text,
-        results: {}
+        index: idx, text: item.text, results: {}
       }));
-
       Object.keys(dayResults).forEach(day => {
         Object.keys(dayResults[day]).forEach(itemIdx => {
           const i = parseInt(itemIdx);
           if (items[i]) {
-            items[i].results[day] = {
-              completed: dayResults[day][itemIdx],
-              confirmed: false
-            };
+            items[i].results[day] = { completed: dayResults[day][itemIdx], confirmed: false };
           }
         });
       });
-
       return { items };
     }
   };

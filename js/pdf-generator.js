@@ -493,6 +493,42 @@ const PDFGenerator = (() => {
     });
   }
 
+  // Registration mark positions (mm from page origin)
+  // These are placed at 4 corners of the content area for OCR alignment
+  const REG_MARK_SIZE = 4; // mm - size of each registration mark
+  const REG_MARKS = {
+    topLeft:     { x: MARGIN,              y: MARGIN },
+    topRight:    { x: PAGE_W - MARGIN - REG_MARK_SIZE, y: MARGIN },
+    bottomLeft:  { x: MARGIN,              y: PAGE_H - MARGIN - REG_MARK_SIZE },
+    bottomRight: { x: PAGE_W - MARGIN - REG_MARK_SIZE, y: PAGE_H - MARGIN - REG_MARK_SIZE },
+  };
+
+  function drawRegistrationMarks(doc) {
+    // Draw L-shaped corner brackets at each corner
+    const s = REG_MARK_SIZE;
+    const armLen = s;
+    const thickness = 0.8;
+
+    doc.setFillColor(0, 0, 0);
+    doc.setDrawColor(0, 0, 0);
+
+    // Top-left: L opens toward bottom-right
+    doc.rect(REG_MARKS.topLeft.x, REG_MARKS.topLeft.y, armLen, thickness, 'F');
+    doc.rect(REG_MARKS.topLeft.x, REG_MARKS.topLeft.y, thickness, armLen, 'F');
+
+    // Top-right: L opens toward bottom-left
+    doc.rect(REG_MARKS.topRight.x + s - armLen, REG_MARKS.topRight.y, armLen, thickness, 'F');
+    doc.rect(REG_MARKS.topRight.x + s - thickness, REG_MARKS.topRight.y, thickness, armLen, 'F');
+
+    // Bottom-left: L opens toward top-right
+    doc.rect(REG_MARKS.bottomLeft.x, REG_MARKS.bottomLeft.y + s - thickness, armLen, thickness, 'F');
+    doc.rect(REG_MARKS.bottomLeft.x, REG_MARKS.bottomLeft.y, thickness, armLen, 'F');
+
+    // Bottom-right: L opens toward top-left
+    doc.rect(REG_MARKS.bottomRight.x + s - armLen, REG_MARKS.bottomRight.y + s - thickness, armLen, thickness, 'F');
+    doc.rect(REG_MARKS.bottomRight.x + s - thickness, REG_MARKS.bottomRight.y, thickness, armLen, 'F');
+  }
+
   function drawFooter(doc, worksheet) {
     const y = PAGE_H - MARGIN + 1;
     doc.setDrawColor(200, 200, 200);
@@ -502,9 +538,9 @@ const PDFGenerator = (() => {
     doc.setTextColor(140, 140, 140);
     doc.setFontSize(7);
     doc.setFont('helvetica', 'normal');
-    doc.text(`Form ID: ${worksheet.serialNumber}`, MARGIN, y);
+    doc.text(`Form ID: ${worksheet.serialNumber}`, MARGIN + 6, y);
     doc.text('Kid Tasker', MARGIN + CONTENT_W / 2, y, { align: 'center' });
-    doc.text(`${worksheet.childName} | Week ${worksheet.weekNumber}, ${worksheet.year}`, MARGIN + CONTENT_W, y, { align: 'right' });
+    doc.text(`${worksheet.childName} | Week ${worksheet.weekNumber}, ${worksheet.year}`, MARGIN + CONTENT_W - 6, y, { align: 'right' });
   }
 
   function drawTableBorder(doc, startY, endY) {
@@ -516,6 +552,13 @@ const PDFGenerator = (() => {
   return {
     // Compute stats from previous worksheet (exposed for use by views)
     calcLastWeekStats,
+
+    // Export layout constants for OCR processor
+    layout: {
+      PAGE_W, PAGE_H, MARGIN, CONTENT_W,
+      COL, CB, CB_P, TOTAL_ROWS,
+      REG_MARKS, REG_MARK_SIZE,
+    },
 
     async generate(worksheet, lastWorksheet, weeklyHistory) {
       const doc = new jsPDF({ unit: 'mm', format: 'letter', orientation: 'landscape' });
@@ -570,6 +613,7 @@ const PDFGenerator = (() => {
       }
 
       drawTableBorder(doc, tableTop, y);
+      drawRegistrationMarks(doc);
       drawFooter(doc, worksheet);
 
       return doc;
