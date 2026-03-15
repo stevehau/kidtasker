@@ -583,6 +583,8 @@ const Store = (() => {
         }, { merge: true });
       } catch (e) { console.warn('Could not save user profile:', e); }
       currentUser = { uid: cred.user.uid, email: cred.user.email, displayName, emailVerified: cred.user.emailVerified };
+      // Clean up stale UIDs from any family that had the same email under a different account
+      try { await this._replaceStaleUid(cred.user.uid, email); } catch (e) { console.warn('Stale UID cleanup failed:', e); }
       return currentUser;
     },
 
@@ -602,6 +604,8 @@ const Store = (() => {
           lastLogin: new Date().toISOString()
         }, { merge: true });
       } catch (e) { console.warn('Could not update user profile:', e); }
+      // Clean up stale UIDs from any family that had the same email under a different account
+      try { await this._replaceStaleUid(cred.user.uid, email); } catch (e) { console.warn('Stale UID cleanup failed:', e); }
       return currentUser;
     },
 
@@ -626,6 +630,34 @@ const Store = (() => {
         currentUser = { uid: u.uid, email: u.email, displayName: u.displayName };
       }
       return currentUser;
+    },
+
+    // Replace stale UIDs in families when a user re-creates their account with the same email.
+    // Finds any family member UIDs whose users doc has a matching email but different UID,
+    // then swaps the old UID for the new one in the family's members array.
+    async _replaceStaleUid(newUid, email) {
+      // Find all user docs with this email (there may be a stale one from a deleted account)
+      const userSnap = await db.collection('users').where('email', '==', email).get();
+      const staleUids = userSnap.docs
+        .map(d => d.id)
+        .filter(uid => uid !== newUid);
+
+      if (staleUids.length === 0) return;
+
+      // For each stale UID, find families that include it and swap in the new UID
+      for (const staleUid of staleUids) {
+        const famSnap = await db.collection('families').where('members', 'array-contains', staleUid).get();
+        for (const famDoc of famSnap.docs) {
+          console.log(`[Store] Replacing stale UID ${staleUid} with ${newUid} in family ${famDoc.id}`);
+          // Remove old, add new (atomically via batch)
+          const batch = db.batch();
+          batch.update(famDoc.ref, { members: firebase.firestore.FieldValue.arrayRemove(staleUid) });
+          batch.update(famDoc.ref, { members: firebase.firestore.FieldValue.arrayUnion(newUid) });
+          await batch.commit();
+        }
+        // Clean up the stale user profile doc
+        try { await db.collection('users').doc(staleUid).delete(); } catch (e) { /* ok */ }
+      }
     },
 
     async getFamily(userId) {
@@ -958,11 +990,20 @@ const Store = (() => {
       const fam = famDoc.data();
       // In Firebase mode, we store user profiles in a 'users' collection
       const members = [];
+      const seenEmails = new Set();
       for (const uid of fam.members) {
         const userDoc = await db.collection('users').doc(uid).get();
-        members.push(userDoc.exists
+        const member = userDoc.exists
           ? { uid, ...userDoc.data() }
-          : { uid, email: 'Unknown', displayName: 'Unknown', realEmail: '' });
+          : { uid, email: 'Unknown', displayName: 'Unknown', realEmail: '' };
+        // Deduplicate by email — skip stale entries that share an email with an already-seen member
+        const memberEmail = (member.email || '').toLowerCase();
+        if (memberEmail && memberEmail !== 'unknown' && seenEmails.has(memberEmail)) {
+          console.warn(`[Store] Skipping duplicate member ${uid} (email: ${memberEmail})`);
+          continue;
+        }
+        if (memberEmail && memberEmail !== 'unknown') seenEmails.add(memberEmail);
+        members.push(member);
       }
       return members;
     },
