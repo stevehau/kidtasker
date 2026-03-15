@@ -26,7 +26,16 @@ const App = (() => {
       document.getElementById('nav-username').textContent = user.displayName || user.email;
 
       // Load family
-      currentFamily = await Store.getFamily(user.uid);
+      try {
+        currentFamily = await Store.getFamily(user.uid);
+      } catch (err) {
+        console.error('Failed to load family:', err);
+        // Show error to user instead of hanging
+        const main = document.getElementById('main-content');
+        if (main) main.innerHTML = '<div style="padding:40px;text-align:center"><h2>Connection Error</h2><p style="color:#666">Could not connect to the database. Error: ' + err.message + '</p><button onclick="location.reload()" style="margin-top:12px;padding:8px 20px;cursor:pointer">Retry</button></div>';
+        showNavbar(false);
+        return;
+      }
 
       if (!currentFamily) {
         showNavbar(false);

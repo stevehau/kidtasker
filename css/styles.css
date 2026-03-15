@@ -170,7 +170,7 @@ select.form-control { cursor: pointer; }
   position: fixed;
   top: 0; left: 0; right: 0; bottom: 0;
   z-index: 100;
-  background: url('../img/splash-full.png') center top / cover no-repeat,
+  background: url('../img/splash-full.png?v=2') center top / cover no-repeat,
               linear-gradient(180deg, #b3dafe 0%, #e8f4ff 40%, #f0f7e8 80%, #e2efd0 100%);
   display: flex;
   align-items: center;
