@@ -34,6 +34,21 @@ const App = (() => {
         return;
       }
 
+      // Show email verification banner if needed (Firebase mode only)
+      if (!USE_LOCAL_STORAGE && user.emailVerified === false) {
+        const existing = document.getElementById('verify-banner');
+        if (!existing) {
+          const banner = document.createElement('div');
+          banner.id = 'verify-banner';
+          banner.style.cssText = 'background:#fff3cd;color:#856404;padding:10px 16px;text-align:center;font-size:0.85rem;border-bottom:1px solid #ffc107';
+          banner.innerHTML = 'Please verify your email address. Check your inbox for a verification link. <button id="btn-resend-verify" style="background:none;border:none;color:#0056b3;text-decoration:underline;cursor:pointer;font-size:0.85rem">Resend</button>';
+          document.body.insertBefore(banner, document.body.firstChild);
+          banner.querySelector('#btn-resend-verify').addEventListener('click', async () => {
+            try { await Store.resendVerification(); alert('Verification email sent!'); } catch (e) { alert(e.message); }
+          });
+        }
+      }
+
       // Route to current hash or dashboard
       if (!isInitialized) {
         isInitialized = true;

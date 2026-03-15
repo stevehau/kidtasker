@@ -574,7 +574,9 @@ const Store = (() => {
     async signUp(email, password, displayName) {
       const cred = await auth.createUserWithEmailAndPassword(email, password);
       await cred.user.updateProfile({ displayName });
-      currentUser = { uid: cred.user.uid, email: cred.user.email, displayName };
+      // Send email verification
+      try { await cred.user.sendEmailVerification(); } catch (e) { /* non-fatal */ }
+      currentUser = { uid: cred.user.uid, email: cred.user.email, displayName, emailVerified: cred.user.emailVerified };
       return currentUser;
     },
 
@@ -583,9 +585,16 @@ const Store = (() => {
       currentUser = {
         uid: cred.user.uid,
         email: cred.user.email,
-        displayName: cred.user.displayName
+        displayName: cred.user.displayName,
+        emailVerified: cred.user.emailVerified
       };
       return currentUser;
+    },
+
+    async resendVerification() {
+      if (auth.currentUser && !auth.currentUser.emailVerified) {
+        await auth.currentUser.sendEmailVerification();
+      }
     },
 
     async signOut() {
@@ -1012,7 +1021,7 @@ const Store = (() => {
         db = firebase.firestore();
         auth.onAuthStateChanged(user => {
           if (user) {
-            currentUser = { uid: user.uid, email: user.email, displayName: user.displayName };
+            currentUser = { uid: user.uid, email: user.email, displayName: user.displayName, emailVerified: user.emailVerified };
           } else {
             currentUser = null;
           }

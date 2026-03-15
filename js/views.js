@@ -218,8 +218,8 @@ const Views = (() => {
             <div id="tab-create">
               <form id="create-family-form">
                 <div class="form-group">
-                  <label>Family Name</label>
-                  <input type="text" class="form-control" id="family-name" required placeholder="e.g., The Hausman Family">
+                  <label>Family Name (e.g., "The Smith Family")</label>
+                  <input type="text" class="form-control" id="family-name" required placeholder="The Smith Family">
                 </div>
                 <button type="submit" class="btn btn-primary btn-block">Create Family</button>
               </form>
@@ -250,12 +250,21 @@ const Views = (() => {
 
     $('#create-family-form').addEventListener('submit', async (e) => {
       e.preventDefault();
+      const btn = e.target.querySelector('button[type=submit]');
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spinner"></span> Creating...';
       try {
         const user = Store.getCurrentUser();
-        await Store.createFamily($('#family-name').value, user.uid);
+        if (!user) throw new Error('Not signed in. Please refresh and try again.');
+        const name = $('#family-name').value.trim();
+        if (!name) throw new Error('Please enter a family name.');
+        await Store.createFamily(name, user.uid);
         window.location.hash = '#/dashboard';
+        window.location.reload();
       } catch (err) {
         showAlert($('.auth-card'), err.message);
+        btn.disabled = false;
+        btn.textContent = 'Create Family';
       }
     });
 
