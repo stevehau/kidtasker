@@ -1314,3 +1314,98 @@ select.form-control { cursor: pointer; }
   color: var(--text-light);
   margin-left: 6px;
 }
+
+/* ===== Worksheet Landscape on Mobile ===== */
+.ws-rotate-hint {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background: linear-gradient(135deg, #e8f0fe, #f0e6ff);
+  color: #444;
+  padding: 10px 16px;
+  border-radius: 8px;
+  font-size: 0.85rem;
+  margin-bottom: 12px;
+  border: 1px solid #d0d7e8;
+}
+.ws-rotate-hint .rotate-icon {
+  font-size: 1.3rem;
+  animation: rotateHint 2s ease-in-out infinite;
+}
+@keyframes rotateHint {
+  0%, 100% { transform: rotate(0deg); }
+  50% { transform: rotate(90deg); }
+}
+
+/* Show rotate hint only on portrait mobile */
+@media (max-width: 768px) and (orientation: portrait) {
+  .ws-rotate-hint {
+    display: flex;
+  }
+}
+
+/* Landscape mobile: maximize worksheet table */
+@media (max-width: 900px) and (orientation: landscape) {
+  .ws-landscape-active #navbar {
+    display: none;
+  }
+  .ws-landscape-active #main-content {
+    padding: 8px;
+    max-width: 100%;
+  }
+  .ws-landscape-active .page-header {
+    flex-direction: row;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+  }
+  .ws-landscape-active .page-header .page-title {
+    font-size: 1rem;
+    margin: 0;
+  }
+  .ws-landscape-active .page-header .text-muted {
+    font-size: 0.75rem;
+    margin: 0;
+  }
+  .ws-landscape-active .ws-preview {
+    font-size: 0.72rem;
+  }
+  .ws-landscape-active .ws-preview .ws-col-day {
+    width: 65px;
+  }
+  .ws-landscape-active .ws-preview tbody td {
+    padding: 3px 4px;
+  }
+  .ws-landscape-active .ws-preview .ws-header th {
+    padding: 4px 3px;
+  }
+  .ws-landscape-exit-btn {
+    display: inline-block;
+    position: fixed;
+    top: 6px;
+    right: 6px;
+    z-index: 1000;
+    background: rgba(0,0,0,0.6);
+    color: #fff;
+    border: none;
+    border-radius: 50%;
+    width: 32px;
+    height: 32px;
+    font-size: 1rem;
+    cursor: pointer;
+    line-height: 32px;
+    text-align: center;
+  }
+}
+/* Hide exit button when not in landscape mode */
+@media (orientation: portrait) {
+  .ws-landscape-exit-btn {
+    display: none;
+  }
+}
+@media (min-width: 901px) {
+  .ws-landscape-exit-btn {
+    display: none;
+  }
+}

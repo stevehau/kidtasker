@@ -996,6 +996,12 @@ const Views = (() => {
         ` : ''}
       </div>
 
+      <!-- Rotate hint for mobile portrait -->
+      <div class="ws-rotate-hint">
+        <span class="rotate-icon">📱</span>
+        <span>Rotate your device for a better worksheet view</span>
+      </div>
+
       <!-- PDF-like worksheet preview -->
       <div class="card" style="padding:0;overflow-x:auto">
         <table class="ws-preview">
@@ -1040,6 +1046,38 @@ const Views = (() => {
         </div>
       ` : ''}
     `;
+
+    // Mobile landscape optimization: add class to body when on this page
+    function checkLandscapeMode() {
+      const isMobile = window.innerWidth <= 900 || window.innerHeight <= 900;
+      const isLandscape = window.innerWidth > window.innerHeight;
+      if (isMobile && isLandscape) {
+        document.body.classList.add('ws-landscape-active');
+        // Add exit button if not present
+        if (!document.querySelector('.ws-landscape-exit-btn')) {
+          const exitBtn = document.createElement('button');
+          exitBtn.className = 'ws-landscape-exit-btn';
+          exitBtn.innerHTML = '✕';
+          exitBtn.title = 'Exit landscape view';
+          exitBtn.addEventListener('click', () => {
+            document.body.classList.remove('ws-landscape-active');
+            exitBtn.remove();
+          });
+          document.body.appendChild(exitBtn);
+        }
+      } else {
+        document.body.classList.remove('ws-landscape-active');
+        const exitBtn = document.querySelector('.ws-landscape-exit-btn');
+        if (exitBtn) exitBtn.remove();
+      }
+    }
+    checkLandscapeMode();
+    // Store handler reference so we can clean up later
+    const orientHandler = () => checkLandscapeMode();
+    window.addEventListener('resize', orientHandler);
+    // Clean up on next navigation (store for cleanup)
+    if (window._wsOrientHandler) window.removeEventListener('resize', window._wsOrientHandler);
+    window._wsOrientHandler = orientHandler;
 
     // Week selector
     if ($('#btn-go-week')) {
@@ -1120,8 +1158,11 @@ const Views = (() => {
         btn.innerHTML = '<span class="spinner"></span> Publishing...';
 
         try {
+          btn.innerHTML = '<span class="spinner"></span> Saving draft...';
           const draft = await Store.saveDraftWorksheet(family.id, childId, child.name, y, w, tasks);
+          btn.innerHTML = '<span class="spinner"></span> Publishing...';
           const published = await Store.publishWorksheet(draft.id);
+          btn.innerHTML = '<span class="spinner"></span> Generating PDF...';
           const prevWs = await Store.getPreviousReviewedWorksheet(family.id, childId, published.id);
           const weeklyHistory = await buildWeeklyHistory(family.id, childId, published.year);
           await PDFGenerator.generateAndDownload(published, prevWs, weeklyHistory);
@@ -1129,7 +1170,8 @@ const Views = (() => {
           showAlert($main(), `Worksheet published! Form ID: ${published.serialNumber}`, 'success');
           setTimeout(() => renderWorksheet(family, childId), 2000);
         } catch (err) {
-          showAlert($main(), err.message);
+          console.error('Publish & Print error:', err);
+          showAlert($main(), 'Error: ' + (err.message || 'Failed to publish worksheet. Check the browser console for details.'));
           btn.disabled = false;
           btn.textContent = 'Publish & Print PDF';
         }

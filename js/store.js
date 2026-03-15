@@ -818,12 +818,14 @@ const Store = (() => {
     },
 
     async getWorksheets(familyId, childId, year, weekNum) {
+      // Use max 2 where clauses to avoid composite index requirement; filter rest client-side
       let q = db.collection('worksheets').where('familyId', '==', familyId);
       if (childId) q = q.where('childId', '==', childId);
-      if (year) q = q.where('year', '==', year);
-      if (weekNum) q = q.where('weekNumber', '==', weekNum);
       const snap = await q.get();
-      return snap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
+      let results = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      if (year) results = results.filter(w => w.year === year);
+      if (weekNum) results = results.filter(w => w.weekNumber === weekNum);
+      return results.sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
     },
 
     async getChildWorksheets(childId) {
@@ -884,14 +886,15 @@ const Store = (() => {
       const currentUser = this.getCurrentUser();
       const now = new Date().toISOString();
 
-      // Look for existing draft
+      // Look for existing draft — use only 2 where clauses to avoid composite index requirement
       const snap = await db.collection('worksheets')
         .where('familyId', '==', familyId)
-        .where('childId', '==', childId)
-        .where('year', '==', year)
-        .where('weekNumber', '==', weekNum).get();
-      // Filter draft client-side to avoid needing composite index
-      const draftDocs = snap.docs.filter(d => d.data().status === 'draft');
+        .where('childId', '==', childId).get();
+      // Filter year, weekNumber, and status client-side to avoid needing composite index
+      const draftDocs = snap.docs.filter(d => {
+        const data = d.data();
+        return data.year === year && data.weekNumber === weekNum && data.status === 'draft';
+      });
 
       const itemsData = items.map((item, i) => ({
         index: i,

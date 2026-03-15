@@ -112,6 +112,15 @@ const App = (() => {
       mainEl.style.backgroundAttachment = '';
     }
 
+    // Clean up landscape worksheet mode when navigating away
+    document.body.classList.remove('ws-landscape-active');
+    const exitBtn = document.querySelector('.ws-landscape-exit-btn');
+    if (exitBtn) exitBtn.remove();
+    if (window._wsOrientHandler) {
+      window.removeEventListener('resize', window._wsOrientHandler);
+      window._wsOrientHandler = null;
+    }
+
     // Invite route works for both logged-in and not-logged-in users
     if (route === 'invite' && param) {
       showNavbar(false);
