@@ -99,8 +99,8 @@ const Views = (() => {
             <a href="#/reset-password" class="auth-link">Forgot your password?</a>
           </div>
           <div class="text-center mt-2" style="font-size:0.8rem">
-            <a href="privacy.html" style="color:#fff;text-decoration:underline">Privacy Policy</a> &middot;
-            <a href="terms.html" style="color:#fff;text-decoration:underline">Terms of Use</a>
+            <a href="privacy.html" target="_blank" style="color:#335;text-decoration:underline;font-weight:600">Privacy Policy</a> &middot;
+            <a href="terms.html" target="_blank" style="color:#335;text-decoration:underline;font-weight:600">Terms of Use</a>
           </div>
         </div>
       </div>
