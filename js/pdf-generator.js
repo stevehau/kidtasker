@@ -170,9 +170,9 @@ const PDFGenerator = (() => {
     const statsY = infoY + infoH + 0.5;
     const statsH = 15; // height for stats banner
 
-    if (lastWeekStats && lastWeekStats.all.total > 0) {
-      const badgeW = CONTENT_W - qrSize - 4;
+    const badgeW = CONTENT_W - qrSize - 4;
 
+    if (lastWeekStats && lastWeekStats.all.total > 0) {
       // Light background for stats area
       doc.setFillColor(255, 250, 235);
       doc.setDrawColor(243, 156, 18);
@@ -228,110 +228,107 @@ const PDFGenerator = (() => {
         doc.setTextColor(40, 40, 40);
         doc.text(`Priority C: ${lastWeekStats.pctC}%`, breakdownX + 3.5, bStartY + lineH * 2);
       }
+    } else {
+      // No last week data - show "Getting Started" banner
+      doc.setFillColor(200, 240, 255);
+      doc.setDrawColor(74, 180, 200);
+      doc.setLineWidth(0.3);
+      doc.roundedRect(MARGIN, statsY, badgeW, statsH, 1.5, 1.5, 'FD');
 
-      // Draw 52-week column chart to the right of the priority breakdown
-      if (weeklyHistory && weeklyHistory.length > 0) {
-        const chartStartX = breakdownX + 45;
-        const chartEndX = badgeW - 2;
-        const chartW = chartEndX - chartStartX;
+      // Started image on the left
+      const imgH = statsH - 2;
+      const imgW = imgH * 2.25;
+      if (startedImg) {
+        try {
+          doc.addImage(startedImg, 'PNG', MARGIN + 1.5, statsY + 1, imgW, imgH);
+        } catch (e) { /* skip if image fails */ }
+      }
 
-        if (chartW > 10) {
-          const totalWeeks = weeklyHistory.length;
-          const barSpacing = chartW / totalWeeks;
-          const barW = Math.max(0.4, barSpacing * 0.7);
-          const chartH = statsH - 5.5;
-          const baselineY = statsY + statsH - 3;
-          const currentWeekNum = worksheet.weekNumber;
+      const textStartX = MARGIN + (startedImg ? imgW + 4 : 3);
 
-          // Title
-          doc.setTextColor(140, 140, 140);
-          doc.setFontSize(4);
-          doc.setFont('helvetica', 'bold');
-          doc.text('Weekly Scores', chartStartX + chartW / 2, statsY + 2.5, { align: 'center' });
+      // Welcome message
+      doc.setTextColor(50, 120, 150);
+      doc.setFontSize(7);
+      doc.setFont('helvetica', 'bold');
+      doc.text('Welcome to Kid Tasker!', textStartX, statsY + 4);
 
-          // Draw individual tick line and bar for each week
-          for (let w = 0; w < totalWeeks; w++) {
-            const data = weeklyHistory[w];
-            const cx = chartStartX + w * barSpacing + barSpacing / 2;
-            const barX = cx - barW / 2;
+      doc.setFontSize(6);
+      doc.setFont('helvetica', 'normal');
+      doc.setTextColor(70, 70, 70);
+      doc.text('Complete your tasks this week!', textStartX, statsY + 10);
+    }
 
-            // Tick line for every week
-            doc.setDrawColor(210, 210, 210);
-            doc.setLineWidth(0.08);
-            doc.line(cx, baselineY, cx, baselineY + 0.6);
+    // Draw 52-week column chart — always shown regardless of lastWeekStats
+    if (weeklyHistory && weeklyHistory.length > 0) {
+      // Position chart in the right portion of the badge
+      const chartStartX = MARGIN + badgeW * 0.55;
+      const chartEndX = MARGIN + badgeW - 2;
+      const chartW = chartEndX - chartStartX;
 
-            // Week number label (show every 4th week + week 1 + last week)
-            const weekNum = data.week || (w + 1);
-            if (weekNum === 1 || weekNum === totalWeeks || weekNum % 4 === 0) {
-              doc.setTextColor(160, 160, 160);
-              doc.setFontSize(2.8);
-              doc.setFont('helvetica', 'normal');
-              doc.text(`${weekNum}`, cx, baselineY + 2.5, { align: 'center' });
-            }
+      if (chartW > 10) {
+        const totalWeeks = weeklyHistory.length;
+        const barSpacing = chartW / totalWeeks;
+        const barW = Math.max(0.4, barSpacing * 0.7);
+        const chartH = statsH - 5.5;
+        const baselineY = statsY + statsH - 3;
+        const currentWeekNum = worksheet.weekNumber;
 
-            if (data.pct > 0) {
-              // Filled bar for weeks with data
-              const h = (data.pct / 100) * chartH;
-              const barY = baselineY - h;
+        // Title
+        doc.setTextColor(140, 140, 140);
+        doc.setFontSize(4);
+        doc.setFont('helvetica', 'bold');
+        doc.text('Weekly Scores', chartStartX + chartW / 2, statsY + 2.5, { align: 'center' });
 
-              // Current worksheet week = gold, others = blue
-              if (weekNum === currentWeekNum) {
-                doc.setFillColor(...GOLD);
-              } else {
-                doc.setFillColor(100, 140, 250);
-              }
-              doc.rect(barX, barY, barW, h, 'F');
+        // Draw individual tick line and bar for each week
+        for (let w = 0; w < totalWeeks; w++) {
+          const data = weeklyHistory[w];
+          const cx = chartStartX + w * barSpacing + barSpacing / 2;
+          const barX = cx - barW / 2;
+
+          // Tick line for every week
+          doc.setDrawColor(210, 210, 210);
+          doc.setLineWidth(0.08);
+          doc.line(cx, baselineY, cx, baselineY + 0.6);
+
+          // Week number label (show every 4th week + week 1 + last week)
+          const weekNum = data.week || (w + 1);
+          if (weekNum === 1 || weekNum === totalWeeks || weekNum % 4 === 0) {
+            doc.setTextColor(160, 160, 160);
+            doc.setFontSize(2.8);
+            doc.setFont('helvetica', 'normal');
+            doc.text(`${weekNum}`, cx, baselineY + 2.5, { align: 'center' });
+          }
+
+          if (data.pct > 0) {
+            // Filled bar for weeks with data
+            const h = (data.pct / 100) * chartH;
+            const barY = baselineY - h;
+
+            // Current worksheet week = gold, others = blue
+            if (weekNum === currentWeekNum) {
+              doc.setFillColor(...GOLD);
             } else {
-              // Empty placeholder box at 10% height for weeks without data
-              const placeholderH = (10 / 100) * chartH;
-              const placeholderY = baselineY - placeholderH;
-
-              if (weekNum <= currentWeekNum) {
-                // Past/current weeks without data: blue outline
-                doc.setDrawColor(100, 140, 250);
-              } else {
-                // Future weeks: grey outline
-                doc.setDrawColor(190, 190, 190);
-              }
-              doc.setLineWidth(0.1);
-              doc.rect(barX, placeholderY, barW, placeholderH, 'D');
+              doc.setFillColor(100, 140, 250);
             }
+            doc.rect(barX, barY, barW, h, 'F');
+          } else {
+            // Empty placeholder box at 10% height for weeks without data
+            const placeholderH = (10 / 100) * chartH;
+            const placeholderY = baselineY - placeholderH;
+
+            if (weekNum <= currentWeekNum) {
+              // Past/current weeks without data: blue outline
+              doc.setDrawColor(100, 140, 250);
+            } else {
+              // Future weeks: grey outline
+              doc.setDrawColor(190, 190, 190);
+            }
+            doc.setLineWidth(0.1);
+            doc.rect(barX, placeholderY, barW, placeholderH, 'D');
           }
         }
       }
-
-      // QR code sits to the right of the stats banner
-      return Math.max(statsY + statsH + 1, qrY + qrSize + 1);
     }
-
-    // No last week data - show "Getting Started" banner instead
-    const badgeW = CONTENT_W - qrSize - 4;
-    doc.setFillColor(200, 240, 255);
-    doc.setDrawColor(74, 180, 200);
-    doc.setLineWidth(0.3);
-    doc.roundedRect(MARGIN, statsY, badgeW, statsH, 1.5, 1.5, 'FD');
-
-    // Started image on the left
-    const imgH = statsH - 2;
-    const imgW = imgH * 2.25;
-    if (startedImg) {
-      try {
-        doc.addImage(startedImg, 'PNG', MARGIN + 1.5, statsY + 1, imgW, imgH);
-      } catch (e) { /* skip if image fails */ }
-    }
-
-    const textStartX = MARGIN + (startedImg ? imgW + 4 : 3);
-
-    // Welcome message
-    doc.setTextColor(50, 120, 150);
-    doc.setFontSize(7);
-    doc.setFont('helvetica', 'bold');
-    doc.text('Welcome to Kid Tasker!', textStartX, statsY + 4);
-
-    doc.setFontSize(6);
-    doc.setFont('helvetica', 'normal');
-    doc.setTextColor(70, 70, 70);
-    doc.text('Complete your tasks this week!', textStartX, statsY + 10);
 
     return Math.max(statsY + statsH + 1, qrY + qrSize + 1);
   }

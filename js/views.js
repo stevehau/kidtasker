@@ -98,8 +98,9 @@ const Views = (() => {
             <a href="#/register" class="auth-link">Don't have an account? Create one</a>
             <a href="#/reset-password" class="auth-link">Forgot your password?</a>
           </div>
-          <div class="text-center mt-2" style="font-size:0.8rem;color:rgba(255,255,255,0.7)">
-            ${USE_LOCAL_STORAGE ? 'Running in local demo mode. Data is saved in your browser.' : 'Connected to Firebase.'}
+          <div class="text-center mt-2" style="font-size:0.75rem;color:rgba(255,255,255,0.6)">
+            <a href="privacy.html" style="color:rgba(255,255,255,0.7)">Privacy Policy</a> &middot;
+            <a href="terms.html" style="color:rgba(255,255,255,0.7)">Terms of Use</a>
           </div>
         </div>
       </div>
@@ -156,6 +157,7 @@ const Views = (() => {
               <button type="submit" class="btn btn-primary btn-block btn-lg">Create Account</button>
             </form>
             <a href="#/login" class="auth-link">Already have an account? Sign in</a>
+            <p style="font-size:0.75rem;color:#999;margin-top:12px">By creating an account, you agree to our <a href="terms.html">Terms of Use</a> and <a href="privacy.html">Privacy Policy</a>.</p>
           </div>
         </div>
       </div>
