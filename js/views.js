@@ -98,9 +98,9 @@ const Views = (() => {
             <a href="#/register" class="auth-link">Don't have an account? Create one</a>
             <a href="#/reset-password" class="auth-link">Forgot your password?</a>
           </div>
-          <div class="text-center mt-2" style="font-size:0.75rem;color:rgba(255,255,255,0.6)">
-            <a href="privacy.html" style="color:rgba(255,255,255,0.7)">Privacy Policy</a> &middot;
-            <a href="terms.html" style="color:rgba(255,255,255,0.7)">Terms of Use</a>
+          <div class="text-center mt-2" style="font-size:0.8rem">
+            <a href="privacy.html" style="color:#fff;text-decoration:underline">Privacy Policy</a> &middot;
+            <a href="terms.html" style="color:#fff;text-decoration:underline">Terms of Use</a>
           </div>
         </div>
       </div>
@@ -1046,6 +1046,16 @@ const Views = (() => {
           }
         } catch (e) { /* ignore */ }
 
+        // Check if already published for this week
+        try {
+          const existing = await Store.getWorksheets(family.id, childId, y, w);
+          const alreadyPublished = existing.find(ws => ws.status === 'published' || ws.status === 'printed' || ws.status === 'scanned' || ws.status === 'reviewed');
+          if (alreadyPublished) {
+            showAlert($main(), `Week ${w} already has a published worksheet (${alreadyPublished.serialNumber}). Use the history dropdown to reprint it.`);
+            return;
+          }
+        } catch (e) { /* proceed */ }
+
         if (!confirm('This will publish and print the worksheet. Continue?')) return;
 
         btn.disabled = true;
@@ -1919,6 +1929,14 @@ const Views = (() => {
         </form>
       </div>
 
+      <!-- Legal -->
+      <div class="card">
+        <div style="display:flex;gap:16px;font-size:0.85rem">
+          <a href="privacy.html" target="_blank">Privacy Policy</a>
+          <a href="terms.html" target="_blank">Terms of Use</a>
+        </div>
+      </div>
+
       ${Store.getCurrentUser().email === 'stevehau@stevehau.com' ? html`
       <!-- Developer Tools (Steve only) -->
       <div class="card" style="border:1px dashed #e74c3c">
@@ -1926,7 +1944,8 @@ const Views = (() => {
         <p class="text-muted mb-2" style="font-size:0.85rem">Only visible to stevehau@stevehau.com</p>
         <div style="display:flex;gap:8px;flex-wrap:wrap">
           <button class="btn btn-outline btn-sm" id="btn-load-demo">Load Demo Data</button>
-          <button class="btn btn-outline btn-sm" id="btn-clear-data" style="color:#e74c3c;border-color:#e74c3c">Clear All Data</button>
+          <button class="btn btn-outline btn-sm" id="btn-clear-worksheets" style="color:#e74c3c;border-color:#e74c3c">Delete All Worksheets</button>
+          <button class="btn btn-outline btn-sm" id="btn-clear-data" style="color:#e74c3c;border-color:#e74c3c">Clear All Local Data</button>
         </div>
       </div>
       ` : ''}
@@ -1941,9 +1960,32 @@ const Views = (() => {
         window.location.href = 'seed-data.html';
       });
     }
+    if ($('#btn-clear-worksheets')) {
+      $('#btn-clear-worksheets').addEventListener('click', async () => {
+        if (!confirm('Delete ALL worksheets for this family? This cannot be undone.')) return;
+        if (!confirm('Are you sure? All worksheet data, scan results, and history will be permanently deleted.')) return;
+        try {
+          const allWs = await Store.getWorksheets(family.id);
+          let deleted = 0;
+          for (const ws of allWs) {
+            try {
+              // For Firebase: delete directly via Firestore
+              if (!USE_LOCAL_STORAGE && firebase && firebase.firestore) {
+                await firebase.firestore().collection('worksheets').doc(ws.id).delete();
+              }
+              deleted++;
+            } catch (e) { console.warn('Failed to delete worksheet:', ws.id, e); }
+          }
+          showAlert($main(), `Deleted ${deleted} worksheets.`, 'success');
+          setTimeout(() => renderSettings(family), 1500);
+        } catch (err) {
+          showAlert($main(), 'Failed: ' + err.message);
+        }
+      });
+    }
     if ($('#btn-clear-data')) {
       $('#btn-clear-data').addEventListener('click', async () => {
-        if (!confirm('Clear ALL data? This cannot be undone.')) return;
+        if (!confirm('Clear ALL local data? This cannot be undone.')) return;
         Object.keys(localStorage).forEach(k => { if (k.startsWith('fc_')) localStorage.removeItem(k); });
         window.location.reload();
       });

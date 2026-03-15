@@ -494,39 +494,47 @@ const PDFGenerator = (() => {
   }
 
   // Registration mark positions (mm from page origin)
-  // These are placed at 4 corners of the content area for OCR alignment
-  const REG_MARK_SIZE = 4; // mm - size of each registration mark
+  // Placed in the margin area (outside content) so they're never hidden by content
+  const REG_MARK_SIZE = 5; // mm - size of each registration mark
+  const REG_INSET = 2; // mm from page edge
   const REG_MARKS = {
-    topLeft:     { x: MARGIN,              y: MARGIN },
-    topRight:    { x: PAGE_W - MARGIN - REG_MARK_SIZE, y: MARGIN },
-    bottomLeft:  { x: MARGIN,              y: PAGE_H - MARGIN - REG_MARK_SIZE },
-    bottomRight: { x: PAGE_W - MARGIN - REG_MARK_SIZE, y: PAGE_H - MARGIN - REG_MARK_SIZE },
+    topLeft:     { x: REG_INSET,                          y: REG_INSET },
+    topRight:    { x: PAGE_W - REG_INSET - REG_MARK_SIZE, y: REG_INSET },
+    bottomLeft:  { x: REG_INSET,                          y: PAGE_H - REG_INSET - REG_MARK_SIZE },
+    bottomRight: { x: PAGE_W - REG_INSET - REG_MARK_SIZE, y: PAGE_H - REG_INSET - REG_MARK_SIZE },
   };
 
   function drawRegistrationMarks(doc) {
-    // Draw L-shaped corner brackets at each corner
-    const s = REG_MARK_SIZE;
-    const armLen = s;
-    const thickness = 0.8;
+    // Draw filled L-shaped corner brackets at each page corner (in margin)
+    const armLen = REG_MARK_SIZE;
+    const thickness = 1.2; // thicker for better detection
 
     doc.setFillColor(0, 0, 0);
-    doc.setDrawColor(0, 0, 0);
 
     // Top-left: L opens toward bottom-right
     doc.rect(REG_MARKS.topLeft.x, REG_MARKS.topLeft.y, armLen, thickness, 'F');
     doc.rect(REG_MARKS.topLeft.x, REG_MARKS.topLeft.y, thickness, armLen, 'F');
+    // Small filled square at the exact corner for precise detection
+    doc.rect(REG_MARKS.topLeft.x, REG_MARKS.topLeft.y, 2, 2, 'F');
 
     // Top-right: L opens toward bottom-left
-    doc.rect(REG_MARKS.topRight.x + s - armLen, REG_MARKS.topRight.y, armLen, thickness, 'F');
-    doc.rect(REG_MARKS.topRight.x + s - thickness, REG_MARKS.topRight.y, thickness, armLen, 'F');
+    const trX = REG_MARKS.topRight.x;
+    doc.rect(trX, REG_MARKS.topRight.y, armLen, thickness, 'F');
+    doc.rect(trX + armLen - thickness, REG_MARKS.topRight.y, thickness, armLen, 'F');
+    doc.rect(trX + armLen - 2, REG_MARKS.topRight.y, 2, 2, 'F');
 
     // Bottom-left: L opens toward top-right
-    doc.rect(REG_MARKS.bottomLeft.x, REG_MARKS.bottomLeft.y + s - thickness, armLen, thickness, 'F');
-    doc.rect(REG_MARKS.bottomLeft.x, REG_MARKS.bottomLeft.y, thickness, armLen, 'F');
+    const blY = REG_MARKS.bottomLeft.y;
+    doc.rect(REG_MARKS.bottomLeft.x, blY + armLen - thickness, armLen, thickness, 'F');
+    doc.rect(REG_MARKS.bottomLeft.x, blY, thickness, armLen, 'F');
+    doc.rect(REG_MARKS.bottomLeft.x, blY + armLen - 2, 2, 2, 'F');
 
     // Bottom-right: L opens toward top-left
-    doc.rect(REG_MARKS.bottomRight.x + s - armLen, REG_MARKS.bottomRight.y + s - thickness, armLen, thickness, 'F');
-    doc.rect(REG_MARKS.bottomRight.x + s - thickness, REG_MARKS.bottomRight.y, thickness, armLen, 'F');
+    const brX = REG_MARKS.bottomRight.x;
+    const brY = REG_MARKS.bottomRight.y;
+    doc.rect(brX, brY + armLen - thickness, armLen, thickness, 'F');
+    doc.rect(brX + armLen - thickness, brY, thickness, armLen, 'F');
+    doc.rect(brX + armLen - 2, brY + armLen - 2, 2, 2, 'F');
   }
 
   function drawFooter(doc, worksheet) {
