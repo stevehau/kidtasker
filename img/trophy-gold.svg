@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <circle cx="32" cy="32" r="30" fill="#FFF9E6" stroke="#F1C40F" stroke-width="2"/>
+  <!-- Trophy cup -->
+  <path d="M20,18 L44,18 L42,34 Q38,42 32,44 Q26,42 22,34 Z" fill="#F1C40F"/>
+  <!-- Trophy handles -->
+  <path d="M20,20 Q12,20 12,28 Q12,34 18,34" stroke="#F39C12" stroke-width="2.5" fill="none"/>
+  <path d="M44,20 Q52,20 52,28 Q52,34 46,34" stroke="#F39C12" stroke-width="2.5" fill="none"/>
+  <!-- Base -->
+  <rect x="26" y="44" width="12" height="4" rx="1" fill="#F39C12"/>
+  <rect x="22" y="48" width="20" height="4" rx="2" fill="#F39C12"/>
+  <!-- Star -->
+  <polygon points="32,24 34,29 39,29 35,32 36,37 32,34 28,37 29,32 25,29 30,29" fill="#FFFFFF"/>
+  <!-- Text -->
+  <text x="32" y="60" text-anchor="middle" font-family="Arial" font-weight="bold" font-size="6" fill="#F39C12">CHAMPION!</text>
+</svg>

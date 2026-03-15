@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <circle cx="32" cy="32" r="30" fill="#F0F4F8" stroke="#95A5A6" stroke-width="2"/>
+  <!-- Big star -->
+  <polygon points="32,10 37,24 52,24 40,33 44,47 32,38 20,47 24,33 12,24 27,24" fill="#BDC3C7" stroke="#95A5A6" stroke-width="1"/>
+  <!-- Inner highlight -->
+  <polygon points="32,16 35,25 44,25 37,31 40,40 32,34 24,40 27,31 20,25 29,25" fill="#ECF0F1"/>
+  <!-- Text -->
+  <text x="32" y="59" text-anchor="middle" font-family="Arial" font-weight="bold" font-size="6" fill="#7F8C8D">GREAT WORK!</text>
+</svg>

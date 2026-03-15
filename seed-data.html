@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Seed Demo Data</title>
+  <style>
+    body { font-family: sans-serif; max-width: 600px; margin: 40px auto; padding: 20px; }
+    button { padding: 12px 24px; font-size: 1rem; cursor: pointer; margin: 8px 4px; }
+    .success { color: green; } .info { color: #666; }
+    pre { background: #f5f5f5; padding: 12px; border-radius: 6px; font-size: 0.85rem; }
+  </style>
+</head>
+<body>
+  <h1>Kid Tasker - Seed Demo Data</h1>
+  <p class="info">This will populate the local storage with demo accounts and data for testing. Open this page, click the button, then go to the main app.</p>
+
+  <button onclick="seedData()">Load Demo Data</button>
+  <button onclick="clearData()">Clear All Data</button>
+
+  <div id="output"></div>
+
+  <script>
+    function seedData() {
+      const out = document.getElementById('output');
+
+      // Users
+      const users = [
+        { uid: 'user_steve', email: 'stevehau@stevehau.com', password: btoa('password123'), displayName: 'Steve', realEmail: 'stevehau@stevehau.com', createdAt: new Date().toISOString() },
+        { uid: 'user_clare', email: 'clarexbear@gmail.com', password: btoa('password123'), displayName: 'Clare', realEmail: 'clarexbear@gmail.com', createdAt: new Date().toISOString() }
+      ];
+      localStorage.setItem('fc_users', JSON.stringify(users));
+
+      // Family
+      const families = [
+        { id: 'fam_hau', name: 'Hau Family', members: ['user_steve', 'user_clare'], weekStart: 'monday', createdAt: new Date().toISOString() }
+      ];
+      localStorage.setItem('fc_families', JSON.stringify(families));
+
+      // Children
+      const children = [
+        { id: 'child_dylan', familyId: 'fam_hau', name: 'Dylan', age: 10, birthday: '2015-08-14', createdAt: new Date().toISOString() },
+        { id: 'child_ethan', familyId: 'fam_hau', name: 'Ethan', age: 7, birthday: '2018-11-02', createdAt: new Date().toISOString() },
+        { id: 'child_jordan', familyId: 'fam_hau', name: 'Jordan', age: 5, birthday: null, createdAt: new Date().toISOString() }
+      ];
+      localStorage.setItem('fc_children', JSON.stringify(children));
+
+      // Task templates for Dylan (matches APP_CONFIG.defaultTasks)
+      const allDays = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+      const weekdays = ['Mon','Tue','Wed','Thu','Fri'];
+      const weekends = ['Sat','Sun'];
+      const templates = [
+        { id: 't1', familyId: 'fam_hau', childId: 'child_dylan', text: 'Wake up on time', category: 'Personal Hygiene', priority: 'A', daysApplicable: weekdays, isActive: true, createdAt: new Date().toISOString() },
+        { id: 't2', familyId: 'fam_hau', childId: 'child_dylan', text: 'Pack school bag', category: 'School Prep', priority: 'A', daysApplicable: weekdays, isActive: true, createdAt: new Date().toISOString() },
+        { id: 't3', familyId: 'fam_hau', childId: 'child_dylan', text: 'Help set or clear the dinner table', category: 'Chores', priority: 'B', daysApplicable: allDays, isActive: true, createdAt: new Date().toISOString() },
+        { id: 't4', familyId: 'fam_hau', childId: 'child_dylan', text: 'Clean your room', category: 'Cleaning', priority: 'A', daysApplicable: allDays, isActive: true, createdAt: new Date().toISOString() },
+        { id: 't5', familyId: 'fam_hau', childId: 'child_dylan', text: 'Tidy the bathroom', category: 'Cleaning', priority: 'B', daysApplicable: allDays, isActive: true, createdAt: new Date().toISOString() },
+        { id: 't6', familyId: 'fam_hau', childId: 'child_dylan', text: 'Read or practice math', category: 'Homework', priority: 'B', daysApplicable: weekends, isActive: true, createdAt: new Date().toISOString() },
+        { id: 't7', familyId: 'fam_hau', childId: 'child_dylan', text: 'Play well with siblings', category: 'Social', priority: 'A', daysApplicable: allDays, isActive: true, createdAt: new Date().toISOString() }
+      ];
+      localStorage.setItem('fc_taskTemplates', JSON.stringify(templates));
+
+      // Create a sample completed worksheet for analytics demo
+      const now = new Date();
+      const weekNum = getWeekNumber(now) - 1; // last week
+      const year = now.getFullYear();
+
+      // Generate 10 weeks of history for a nice chart
+      const sampleWorksheets = [];
+      const scores = [0.55, 0.62, 0.68, 0.60, 0.72, 0.75, 0.78, 0.80, 0.85, 0.82];
+      for (let i = scores.length - 1; i >= 0; i--) {
+        const wk = weekNum - i;
+        if (wk > 0) {
+          sampleWorksheets.push(
+            createSampleWorksheet('child_dylan', 'Dylan', year, wk, templates, scores[scores.length - 1 - i])
+          );
+        }
+      }
+      localStorage.setItem('fc_worksheets', JSON.stringify(sampleWorksheets));
+
+      out.innerHTML = `
+        <p class="success"><strong>Demo data loaded successfully!</strong></p>
+        <pre>Accounts:
+  stevehau@stevehau.com / password123
+  clarexbear@gmail.com / password123
+
+Family: Hau Family (code: fam_hau)
+Children: Dylan (10), Ethan (7), Jordan (5)
+Dylan has 10 checklist items pre-configured.
+${sampleWorksheets.length} sample worksheets with results loaded for analytics demo.
+Weekly scores chart will show progress across weeks.</pre>
+        <p><a href="index.html">Go to Kid Tasker &rarr;</a></p>
+      `;
+    }
+
+    function clearData() {
+      Object.keys(localStorage).forEach(k => {
+        if (k.startsWith('fc_')) localStorage.removeItem(k);
+      });
+      document.getElementById('output').innerHTML = '<p class="success">All data cleared!</p>';
+    }
+
+    function getWeekNumber(date) {
+      const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+      const dayNum = d.getUTCDay() || 7;
+      d.setUTCDate(d.getUTCDate() + 4 - dayNum);
+      const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+      return Math.ceil((((d - yearStart) / 86400000) + 1) / 7);
+    }
+
+    function getMondayOfWeek(year, weekNum) {
+      const jan4 = new Date(year, 0, 4);
+      const dayOfWeek = jan4.getDay() || 7;
+      const monday = new Date(jan4);
+      monday.setDate(jan4.getDate() - dayOfWeek + 1 + (weekNum - 1) * 7);
+      return monday;
+    }
+
+    function createSampleWorksheet(childId, childName, year, weekNum, templates, completionRate) {
+      const monday = getMondayOfWeek(year, weekNum);
+      const hash = Math.random().toString(36).slice(2, 6).toUpperCase();
+      const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+
+      return {
+        id: 'ws_' + Math.random().toString(36).slice(2, 9),
+        serialNumber: `WSH-DYL-${year}-W${String(weekNum).padStart(2, '0')}-${hash}`,
+        familyId: 'fam_hau',
+        childId,
+        childName,
+        year,
+        month: monday.toLocaleString('default', { month: 'long' }),
+        weekNumber: weekNum,
+        weekStartDate: monday.toISOString().split('T')[0],
+        items: templates.map((t, i) => ({
+          index: i,
+          taskId: t.id,
+          text: t.text,
+          category: t.category,
+          priority: t.priority,
+          daysApplicable: t.daysApplicable || days,
+          results: Object.fromEntries(days.filter(d => (t.daysApplicable || days).includes(d)).map(d => [d, {
+            completed: Math.random() < completionRate,
+            confirmed: Math.random() < completionRate * 0.9
+          }]))
+        })),
+        status: 'reviewed',
+        createdAt: monday.toISOString(),
+        updatedAt: new Date().toISOString()
+      };
+    }
+  </script>
+</body>
+</html>
