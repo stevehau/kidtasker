@@ -565,6 +565,7 @@ const PDFGenerator = (() => {
     layout: {
       PAGE_W, PAGE_H, MARGIN, CONTENT_W,
       COL, CB, CB_P, TOTAL_ROWS,
+      TABLE_HEADER_H: 10, FOOTER_RESERVE: 8,
       REG_MARKS, REG_MARK_SIZE,
     },
 

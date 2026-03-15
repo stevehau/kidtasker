@@ -1212,17 +1212,16 @@ const Views = (() => {
             </div>
           </div>
 
-          <!-- Smartphone Photo Card -->
-          <div class="card" style="margin:0">
+          <!-- Smartphone Photo Card (Coming Soon) -->
+          <div class="card" style="margin:0;opacity:0.55;pointer-events:none">
             <div class="card-title" style="margin-bottom:12px">
               <div style="font-size:2rem;margin-bottom:8px">📷</div>
               Smartphone Photo
             </div>
-            <p class="text-muted" style="font-size:0.9rem;margin-bottom:16px">Take or upload a photo of the completed worksheet</p>
-            <div class="scanner-area" id="drop-zone-photo">
-              <p>Drop photo here or click to upload</p>
-              <p style="font-size:0.8rem">(JPG, PNG)</p>
-              <input type="file" id="scan-file-photo" accept="image/*" capture="environment" style="display:none">
+            <p class="text-muted" style="font-size:0.9rem;margin-bottom:16px">Coming soon &mdash; use a flatbed scanner for now</p>
+            <div class="scanner-area" id="drop-zone-photo" style="border-style:dashed;opacity:0.5">
+              <p style="color:#999">Coming Soon</p>
+              <input type="file" id="scan-file-photo" accept="image/*" capture="environment" style="display:none" disabled>
             </div>
           </div>
         </div>
@@ -1395,6 +1394,16 @@ const Views = (() => {
       const regMarkNote = detailedResult.regMarksFound >= 3 ? 'perspective-corrected' : 'estimated alignment';
       const itemCount = detailedResult.items ? detailedResult.items.length : 0;
 
+      // Format threshold info (v3 has object with contrast + ink)
+      let thresholdInfo = '';
+      if (detailedResult.threshold) {
+        if (typeof detailedResult.threshold === 'object') {
+          thresholdInfo = `Contrast threshold: ${(detailedResult.threshold.contrast * 100).toFixed(0)}%, Ink threshold: ${(detailedResult.threshold.ink * 100).toFixed(0)}%`;
+        } else {
+          thresholdInfo = `Ink threshold: ${(detailedResult.threshold * 100).toFixed(0)}%`;
+        }
+      }
+
       resultsArea.innerHTML = html`
         <div class="alert alert-success">
           <strong>Worksheet matched!</strong> ${worksheet.childName}, Week ${worksheet.weekNumber} ${worksheet.year}
@@ -1402,11 +1411,43 @@ const Views = (() => {
         </div>
         <p class="text-muted mb-2">
           Detected <strong>parent confirmation</strong> checkboxes for ${itemCount} task(s).
-          ${detailedResult.threshold ? `Ink threshold: ${(detailedResult.threshold * 100).toFixed(0)}%.` : ''}
+          ${thresholdInfo ? `<br><small>${thresholdInfo}</small>` : ''}
           <br><strong>Please review and correct</strong> the results below, then save.
         </p>
-        <button class="btn btn-primary" id="btn-goto-results">Review &amp; Edit Results</button>
+        <div id="debug-overlay-container" class="hidden" style="margin-bottom:16px">
+          <p class="text-muted" style="font-size:0.8rem;margin-bottom:4px">
+            <strong>Debug overlay:</strong> Green = checked, Red = unchecked. Numbers show contrast%/ink%.
+          </p>
+          <div style="max-width:100%;overflow:auto;border:1px solid #ddd;border-radius:var(--radius)">
+            <canvas id="debug-overlay-canvas" style="max-width:100%;height:auto"></canvas>
+          </div>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;margin-bottom:12px">
+          <button class="btn btn-primary" id="btn-goto-results">Review &amp; Edit Results</button>
+          <button class="btn btn-outline btn-sm" id="btn-toggle-debug">Show Debug Overlay</button>
+        </div>
       `;
+
+      // Wire up debug overlay toggle
+      const debugToggle = $('#btn-toggle-debug');
+      const debugContainer = $('#debug-overlay-container');
+      if (debugToggle && detailedResult.debugCanvas) {
+        debugToggle.addEventListener('click', () => {
+          const isHidden = debugContainer.classList.contains('hidden');
+          debugContainer.classList.toggle('hidden');
+          debugToggle.textContent = isHidden ? 'Hide Debug Overlay' : 'Show Debug Overlay';
+          if (isHidden) {
+            // Copy debug canvas into the display canvas
+            const displayCanvas = $('#debug-overlay-canvas');
+            displayCanvas.width = detailedResult.debugCanvas.width;
+            displayCanvas.height = detailedResult.debugCanvas.height;
+            const dctx = displayCanvas.getContext('2d');
+            dctx.drawImage(detailedResult.debugCanvas, 0, 0);
+          }
+        });
+      } else if (debugToggle) {
+        debugToggle.style.display = 'none';
+      }
 
       // Save preliminary OCR results
       if (detailedResult.items && detailedResult.items.length > 0) {

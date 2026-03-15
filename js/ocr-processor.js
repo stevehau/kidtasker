@@ -397,11 +397,34 @@ const OCRProcessor = (() => {
     };
   }
 
-  // ---- Checkbox Detection ----
+  // ---- Checkbox Detection v3 ----
+  // Center-focused sampling with contrast ratio and debug overlay
 
-  function measureDarknessAtPx(ctx, cx, cy, radiusPx, imgW, imgH) {
-    // Sample a square region around center point
-    const r = Math.max(2, Math.round(radiusPx));
+  // Measure average brightness in a small square region
+  function avgBrightness(ctx, cx, cy, halfSize, imgW, imgH) {
+    const r = Math.max(1, Math.round(halfSize));
+    const x0 = Math.max(0, cx - r);
+    const y0 = Math.max(0, cy - r);
+    const x1 = Math.min(imgW, cx + r);
+    const y1 = Math.min(imgH, cy + r);
+    const w = x1 - x0;
+    const h = y1 - y0;
+    if (w <= 0 || h <= 0) return 255;
+    try {
+      const imageData = ctx.getImageData(x0, y0, w, h);
+      const data = imageData.data;
+      let sum = 0;
+      const total = w * h;
+      for (let i = 0; i < data.length; i += 4) {
+        sum += (data[i] + data[i + 1] + data[i + 2]) / 3;
+      }
+      return sum / total;
+    } catch (e) { return 255; }
+  }
+
+  // Count ink-density: fraction of pixels darker than a given brightness threshold
+  function inkDensity(ctx, cx, cy, halfSize, imgW, imgH, darkThresh) {
+    const r = Math.max(1, Math.round(halfSize));
     const x0 = Math.max(0, cx - r);
     const y0 = Math.max(0, cy - r);
     const x1 = Math.min(imgW, cx + r);
@@ -409,69 +432,87 @@ const OCRProcessor = (() => {
     const w = x1 - x0;
     const h = y1 - y0;
     if (w <= 0 || h <= 0) return 0;
-
     try {
       const imageData = ctx.getImageData(x0, y0, w, h);
       const data = imageData.data;
-      let darkPixels = 0;
+      let darkCount = 0;
       const total = w * h;
       for (let i = 0; i < data.length; i += 4) {
-        const brightness = (data[i] + data[i + 1] + data[i + 2]) / 3;
-        if (brightness < 130) darkPixels++;
+        if ((data[i] + data[i + 1] + data[i + 2]) / 3 < darkThresh) darkCount++;
       }
-      return darkPixels / total;
+      return darkCount / total;
     } catch (e) { return 0; }
   }
 
-  // ---- Main Checkbox Analysis ----
+  // ---- Main Checkbox Analysis v3 ----
+  // Strategy: For each parent checkbox, compute its exact mm position from PDF layout,
+  // map to pixel coordinates, then:
+  //   1. Sample a TIGHT center region (25% of checkbox size) — avoids borders
+  //   2. Sample a SURROUND ring just outside the checkbox — establishes baseline
+  //   3. Use contrast ratio (surround brightness - center brightness) for detection
+  //   4. Build debug overlay showing exactly where we're sampling
 
   function analyzeCheckboxes(ctx, imgW, imgH, worksheet, mapper) {
     const L = PDFGenerator.layout;
     const items = worksheet.items || [];
     const days = APP_CONFIG.daysShort;
 
-    // We need to know where the table data starts
-    // Estimate header end from PDF layout (same logic as pdf-generator)
+    // Use exported constants from PDF generator (exact values, not estimates)
     const barH = 9, infoH = 9, qrSize = 13, statsH = 15;
     const infoY = L.MARGIN + barH + 0.5;
     const qrY = infoY + infoH + 0.5;
     const statsY = qrY;
     const headerEnd = Math.max(statsY + statsH + 1, qrY + qrSize + 1);
-    const tableHeaderH = 9;
-    const footerReserve = 8;
-    const dataStartY = headerEnd + tableHeaderH;
-    const availableH = L.PAGE_H - L.MARGIN - footerReserve - (headerEnd - L.MARGIN) - tableHeaderH;
-    const rowH = Math.min(Math.max(availableH / L.TOTAL_ROWS, 5.5), 11);
+    const tableHeaderH = L.TABLE_HEADER_H || 10;
+    const footerReserve = L.FOOTER_RESERVE || 8;
 
-    // Also try to detect the blue header bar for better alignment
+    // Detect the blue table header bar for precise vertical alignment
     const blueBar = findBlueHeaderBar(ctx, imgW, imgH, mapper);
-    let actualDataStartY = dataStartY;
-    let actualRowH = rowH;
+    let dataStartMmY;
+    let rowH;
 
     if (blueBar) {
-      actualDataStartY = blueBar.bottomMm;
-      const actualAvailableH = L.PAGE_H - L.MARGIN - footerReserve - blueBar.bottomMm;
-      actualRowH = Math.min(Math.max(actualAvailableH / L.TOTAL_ROWS, 5.5), 11);
-      console.log(`[OCR] Blue bar at ${blueBar.topMm.toFixed(1)}-${blueBar.bottomMm.toFixed(1)}mm, rowH=${actualRowH.toFixed(1)}`);
+      // Blue bar bottom edge = exact start of data rows
+      dataStartMmY = blueBar.bottomMm;
+      const availableH = L.PAGE_H - L.MARGIN - footerReserve - blueBar.bottomMm;
+      rowH = Math.min(Math.max(availableH / L.TOTAL_ROWS, 5.5), 11);
+      console.log(`[OCR v3] Blue bar detected: ${blueBar.topMm.toFixed(1)}-${blueBar.bottomMm.toFixed(1)}mm, dataStart=${dataStartMmY.toFixed(1)}mm, rowH=${rowH.toFixed(2)}mm`);
+    } else {
+      dataStartMmY = headerEnd + tableHeaderH;
+      const availableH = L.PAGE_H - L.MARGIN - footerReserve - (headerEnd - L.MARGIN) - tableHeaderH;
+      rowH = Math.min(Math.max(availableH / L.TOTAL_ROWS, 5.5), 11);
+      console.log(`[OCR v3] No blue bar, estimated dataStart=${dataStartMmY.toFixed(1)}mm, rowH=${rowH.toFixed(2)}mm`);
     }
 
-    // Compute pixel size of checkbox inner region for sampling
-    // Parent checkbox is CB_P mm, sample inner 55%
-    const sampleSizeMm = L.CB_P * 0.55;
-    // Map to get approximate pixel size
+    // Compute pixel sizes for sampling regions
+    // Parent checkbox is CB_P mm (3.4mm). We sample the center 25% = 0.85mm radius
+    const centerSizeMm = L.CB_P * 0.25;
+    const surroundSizeMm = L.CB_P * 0.8; // slightly larger than the checkbox for surround
     const p1 = mapper(0, 0);
-    const p2 = mapper(sampleSizeMm, 0);
-    const sampleRadiusPx = Math.abs(p2.x - p1.x) / 2;
+    const p2 = mapper(centerSizeMm, 0);
+    const centerHalfPx = Math.max(2, Math.abs(p2.x - p1.x));
+    const p3 = mapper(surroundSizeMm, 0);
+    const surroundHalfPx = Math.max(4, Math.abs(p3.x - p1.x));
 
-    const darknessValues = [];
-    const results = [];
+    // Build debug overlay canvas (copy of scanned image with annotations)
+    const debugCanvas = document.createElement('canvas');
+    debugCanvas.width = imgW;
+    debugCanvas.height = imgH;
+    const dbg = debugCanvas.getContext('2d');
+    dbg.drawImage(ctx.canvas, 0, 0);
 
-    // First pass: measure darkness at each PARENT checkbox center
+    // Draw registration mark positions on debug overlay
+    dbg.strokeStyle = '#00ff00';
+    dbg.lineWidth = 3;
+
+    const measurements = [];
+
+    // Measure each parent checkbox
     for (let row = 0; row < items.length; row++) {
       const item = items[row];
       const applicableDays = item.daysApplicable || days;
-      const rowY = actualDataStartY + row * actualRowH;
-      const midY = rowY + actualRowH / 2;
+      const rowY = dataStartMmY + row * rowH;
+      const midY = rowY + rowH / 2;
 
       for (let d = 0; d < 7; d++) {
         const dayName = days[d];
@@ -480,57 +521,117 @@ const OCRProcessor = (() => {
         const dayX = L.MARGIN + L.COL.dayStart + d * L.COL.dayW;
         const halfW = L.COL.dayW / 2;
 
-        // Parent checkbox center (right half of day column)
-        const parentCenterMmX = dayX + halfW + halfW / 2;
+        // Parent checkbox center — exact formula from pdf-generator:
+        //   parentCbX = dayX + halfW + (halfW - CB_P) / 2
+        //   parentCbY = midY - CB_P / 2
+        //   center = parentCbX + CB_P/2, parentCbY + CB_P/2
+        const parentCenterMmX = dayX + halfW + (halfW - L.CB_P) / 2 + L.CB_P / 2;
         const parentCenterMmY = midY;
 
         const parentPx = mapper(parentCenterMmX, parentCenterMmY);
-        const parentDark = measureDarknessAtPx(ctx, parentPx.x, parentPx.y, sampleRadiusPx, imgW, imgH);
-        darknessValues.push({ row, day: d, type: 'parent', value: parentDark, px: parentPx });
 
-        // Also measure child checkbox for display (left half)
-        const childCenterMmX = dayX + halfW / 2;
-        const childPx = mapper(childCenterMmX, parentCenterMmY);
-        const childDark = measureDarknessAtPx(ctx, childPx.x, childPx.y, sampleRadiusPx, imgW, imgH);
-        darknessValues.push({ row, day: d, type: 'child', value: childDark, px: childPx });
+        // 1. Center brightness (tight inner region, avoids borders entirely)
+        const centerBright = avgBrightness(ctx, parentPx.x, parentPx.y, centerHalfPx, imgW, imgH);
+
+        // 2. Ink density in center region (fraction of dark pixels)
+        const centerInk = inkDensity(ctx, parentPx.x, parentPx.y, centerHalfPx, imgW, imgH, 160);
+
+        // 3. Surround brightness (area around the checkbox for baseline)
+        // Sample 4 points outside the checkbox (above, below, left, right)
+        const offset = surroundHalfPx;
+        const sAbove = avgBrightness(ctx, parentPx.x, parentPx.y - offset, centerHalfPx, imgW, imgH);
+        const sBelow = avgBrightness(ctx, parentPx.x, parentPx.y + offset, centerHalfPx, imgW, imgH);
+        const sLeft  = avgBrightness(ctx, parentPx.x - offset, parentPx.y, centerHalfPx, imgW, imgH);
+        const sRight = avgBrightness(ctx, parentPx.x + offset, parentPx.y, centerHalfPx, imgW, imgH);
+        const surroundBright = (sAbove + sBelow + sLeft + sRight) / 4;
+
+        // 4. Contrast: how much darker is the center vs the surround?
+        //    Positive = center is darker = likely has ink
+        const contrastDrop = surroundBright - centerBright;
+        // Normalized contrast (0..1 scale)
+        const contrastRatio = Math.max(0, contrastDrop) / Math.max(surroundBright, 1);
+
+        measurements.push({
+          row, day: d, type: 'parent',
+          px: parentPx,
+          centerBright, surroundBright, contrastDrop, contrastRatio, centerInk,
+          mmX: parentCenterMmX, mmY: parentCenterMmY,
+        });
+
+        // Also measure child checkbox for informational display
+        const childCenterMmX = dayX + (halfW - L.CB) / 2 + L.CB / 2;
+        const childPx = mapper(childCenterMmX, midY);
+        const childCenterBright = avgBrightness(ctx, childPx.x, childPx.y, centerHalfPx, imgW, imgH);
+        const childInk = inkDensity(ctx, childPx.x, childPx.y, centerHalfPx, imgW, imgH, 160);
+        measurements.push({
+          row, day: d, type: 'child',
+          px: childPx,
+          centerBright: childCenterBright, centerInk: childInk,
+        });
       }
     }
 
-    // Adaptive threshold using Otsu-like approach on PARENT values only
-    const parentValues = darknessValues.filter(v => v.type === 'parent').map(v => v.value).sort((a, b) => a - b);
-    let threshold = 0.12;
+    // ---- Adaptive thresholding on parent contrast ratios ----
+    const parentMeasurements = measurements.filter(m => m.type === 'parent');
+    const contrastValues = parentMeasurements.map(m => m.contrastRatio).sort((a, b) => a - b);
+    const inkValues = parentMeasurements.map(m => m.centerInk).sort((a, b) => a - b);
 
-    if (parentValues.length > 4) {
-      // Find best split using between-class variance
-      let bestThresh = 0.12, bestVariance = 0;
-      for (let t = 0.05; t <= 0.50; t += 0.01) {
-        const below = parentValues.filter(v => v <= t);
-        const above = parentValues.filter(v => v > t);
+    // Use BOTH contrast ratio and ink density for classification
+    // Otsu on contrast ratio
+    let contrastThreshold = 0.08;
+    if (contrastValues.length > 4) {
+      let bestThresh = 0.08, bestVar = 0;
+      for (let t = 0.02; t <= 0.50; t += 0.005) {
+        const below = contrastValues.filter(v => v <= t);
+        const above = contrastValues.filter(v => v > t);
         if (below.length === 0 || above.length === 0) continue;
-        const meanBelow = below.reduce((s, v) => s + v, 0) / below.length;
-        const meanAbove = above.reduce((s, v) => s + v, 0) / above.length;
-        const variance = below.length * above.length * Math.pow(meanAbove - meanBelow, 2);
-        if (variance > bestVariance) {
-          bestVariance = variance;
-          bestThresh = t;
-        }
+        const mB = below.reduce((s, v) => s + v, 0) / below.length;
+        const mA = above.reduce((s, v) => s + v, 0) / above.length;
+        const v = below.length * above.length * (mA - mB) ** 2;
+        if (v > bestVar) { bestVar = v; bestThresh = t; }
       }
-      threshold = bestThresh;
-      // Ensure reasonable range
-      threshold = Math.max(0.08, Math.min(threshold, 0.40));
+      contrastThreshold = Math.max(0.04, Math.min(bestThresh, 0.40));
     }
 
-    console.log('[OCR] Parent checkbox darkness stats:', {
-      min: parentValues[0]?.toFixed(3),
-      q25: parentValues[Math.floor(parentValues.length * 0.25)]?.toFixed(3),
-      median: parentValues[Math.floor(parentValues.length / 2)]?.toFixed(3),
-      q75: parentValues[Math.floor(parentValues.length * 0.75)]?.toFixed(3),
-      max: parentValues[parentValues.length - 1]?.toFixed(3),
-      threshold: threshold.toFixed(3),
-      count: parentValues.length
+    // Otsu on ink density
+    let inkThreshold = 0.10;
+    if (inkValues.length > 4) {
+      let bestThresh = 0.10, bestVar = 0;
+      for (let t = 0.03; t <= 0.60; t += 0.005) {
+        const below = inkValues.filter(v => v <= t);
+        const above = inkValues.filter(v => v > t);
+        if (below.length === 0 || above.length === 0) continue;
+        const mB = below.reduce((s, v) => s + v, 0) / below.length;
+        const mA = above.reduce((s, v) => s + v, 0) / above.length;
+        const v = below.length * above.length * (mA - mB) ** 2;
+        if (v > bestVar) { bestVar = v; bestThresh = t; }
+      }
+      inkThreshold = Math.max(0.05, Math.min(bestThresh, 0.50));
+    }
+
+    console.log('[OCR v3] Thresholds:', {
+      contrastThreshold: contrastThreshold.toFixed(4),
+      inkThreshold: inkThreshold.toFixed(4),
+    });
+    console.log('[OCR v3] Contrast values:', {
+      min: contrastValues[0]?.toFixed(4),
+      q25: contrastValues[Math.floor(contrastValues.length * 0.25)]?.toFixed(4),
+      median: contrastValues[Math.floor(contrastValues.length / 2)]?.toFixed(4),
+      q75: contrastValues[Math.floor(contrastValues.length * 0.75)]?.toFixed(4),
+      max: contrastValues[contrastValues.length - 1]?.toFixed(4),
+    });
+    console.log('[OCR v3] Ink density values:', {
+      min: inkValues[0]?.toFixed(4),
+      q25: inkValues[Math.floor(inkValues.length * 0.25)]?.toFixed(4),
+      median: inkValues[Math.floor(inkValues.length / 2)]?.toFixed(4),
+      q75: inkValues[Math.floor(inkValues.length * 0.75)]?.toFixed(4),
+      max: inkValues[inkValues.length - 1]?.toFixed(4),
     });
 
-    // Second pass: classify
+    // ---- Classify and draw debug overlay ----
+    const results = [];
+    const darknessValues = []; // backward compat
+
     for (let row = 0; row < items.length; row++) {
       const item = items[row];
       const applicableDays = item.daysApplicable || days;
@@ -540,24 +641,68 @@ const OCRProcessor = (() => {
         const dayName = days[d];
         if (!applicableDays.includes(dayName)) continue;
 
-        const parentEntry = darknessValues.find(v => v.row === row && v.day === d && v.type === 'parent');
-        const childEntry = darknessValues.find(v => v.row === row && v.day === d && v.type === 'child');
+        const pm = parentMeasurements.find(m => m.row === row && m.day === d);
+        const cm = measurements.find(m => m.row === row && m.day === d && m.type === 'child');
+        if (!pm) continue;
 
-        // Only parent checkbox determines the score
-        const parentChecked = parentEntry && parentEntry.value > threshold;
+        // Checkbox is checked if EITHER:
+        // - contrast ratio exceeds threshold (ink makes center darker than surround)
+        // - ink density exceeds threshold (lots of dark pixels in center)
+        const checkedByContrast = pm.contrastRatio > contrastThreshold;
+        const checkedByInk = pm.centerInk > inkThreshold;
+        const parentChecked = checkedByContrast || checkedByInk;
 
         rowResults[dayName] = {
-          completed: parentChecked || false,
-          confirmed: parentChecked || false,
-          parentDarkness: parentEntry ? parentEntry.value : 0,
-          childDarkness: childEntry ? childEntry.value : 0,
+          completed: parentChecked,
+          confirmed: parentChecked,
+          parentDarkness: pm.centerInk,
+          childDarkness: cm ? cm.centerInk : 0,
+          contrastRatio: pm.contrastRatio,
+          centerBright: pm.centerBright,
+          surroundBright: pm.surroundBright,
         };
+
+        // backward compat
+        darknessValues.push({ row, day: d, type: 'parent', value: pm.centerInk, px: pm.px });
+        if (cm) darknessValues.push({ row, day: d, type: 'child', value: cm.centerInk, px: cm.px });
+
+        // ---- Draw debug markers on overlay ----
+        const px = pm.px;
+        // Draw center sample zone
+        dbg.strokeStyle = parentChecked ? '#00ff00' : '#ff0000';
+        dbg.lineWidth = 2;
+        dbg.strokeRect(px.x - centerHalfPx, px.y - centerHalfPx, centerHalfPx * 2, centerHalfPx * 2);
+        // Draw crosshair
+        dbg.beginPath();
+        dbg.moveTo(px.x - centerHalfPx - 2, px.y);
+        dbg.lineTo(px.x + centerHalfPx + 2, px.y);
+        dbg.moveTo(px.x, px.y - centerHalfPx - 2);
+        dbg.lineTo(px.x, px.y + centerHalfPx + 2);
+        dbg.stroke();
+        // Label with contrast value
+        dbg.font = `${Math.max(8, Math.round(imgW / 300))}px monospace`;
+        dbg.fillStyle = parentChecked ? '#00ff00' : '#ff0000';
+        dbg.fillText(
+          `${(pm.contrastRatio * 100).toFixed(0)}/${(pm.centerInk * 100).toFixed(0)}`,
+          px.x + centerHalfPx + 3,
+          px.y - 2
+        );
+
+        // Draw child checkbox marker (dimmer)
+        if (cm) {
+          dbg.strokeStyle = 'rgba(255,165,0,0.5)';
+          dbg.lineWidth = 1;
+          dbg.strokeRect(cm.px.x - centerHalfPx, cm.px.y - centerHalfPx, centerHalfPx * 2, centerHalfPx * 2);
+        }
       }
 
       results.push({ index: row, text: item.text, results: rowResults });
     }
 
-    return { results, threshold, darknessValues };
+    return {
+      results, threshold: { contrast: contrastThreshold, ink: inkThreshold },
+      darknessValues, debugCanvas,
+    };
   }
 
   // ---- Blue Header Bar Detection (improved with mapper) ----
@@ -706,6 +851,7 @@ const OCRProcessor = (() => {
           items: checkboxResults ? checkboxResults.results : [],
           threshold: checkboxResults ? checkboxResults.threshold : null,
           rawDarkness: checkboxResults ? checkboxResults.darknessValues : [],
+          debugCanvas: checkboxResults ? checkboxResults.debugCanvas : null,
           canvasWidth: imgW,
           canvasHeight: imgH,
         };
