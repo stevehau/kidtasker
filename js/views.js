@@ -103,7 +103,11 @@ const Views = (() => {
         await Store.signIn($('#login-email').value, $('#login-password').value);
         // Auth callback will handle routing
       } catch (err) {
-        showAlert($('.auth-card'), err.message);
+        let msg = err.message;
+        if (err.code === 'auth/user-not-found' || err.code === 'auth/invalid-credential') msg = 'Invalid email or password. Please try again.';
+        else if (err.code === 'auth/wrong-password') msg = 'Incorrect password. Try "Forgot your password?" below.';
+        else if (err.code === 'auth/too-many-requests') msg = 'Too many failed attempts. Please wait a few minutes and try again.';
+        showAlert($('.auth-card'), msg);
         btn.disabled = false;
         btn.textContent = 'Sign In';
       }
@@ -158,7 +162,11 @@ const Views = (() => {
       try {
         await Store.signUp($('#reg-email').value, $('#reg-password').value, $('#reg-name').value);
       } catch (err) {
-        showAlert($('.auth-card'), err.message);
+        let msg = err.message;
+        if (err.code === 'auth/email-already-in-use') msg = 'This email is already registered. <a href="#/login">Sign in instead</a>.';
+        else if (err.code === 'auth/weak-password') msg = 'Password must be at least 6 characters.';
+        else if (err.code === 'auth/invalid-email') msg = 'Please enter a valid email address.';
+        showAlert($('.auth-card'), msg);
         btn.disabled = false;
         btn.textContent = 'Create Account';
       }
@@ -191,11 +199,18 @@ const Views = (() => {
 
     $('#reset-form').addEventListener('submit', async (e) => {
       e.preventDefault();
+      const btn = e.target.querySelector('button[type=submit]');
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spinner"></span> Sending...';
       try {
         await Store.resetPassword($('#reset-email').value);
-        showAlert($('.auth-card'), 'Check your email for the reset link.', 'success');
+        showAlert($('.auth-card'), 'If this email is registered, you\'ll receive a reset link shortly. Check your spam folder too.', 'success');
+        btn.textContent = 'Email Sent';
       } catch (err) {
-        showAlert($('.auth-card'), err.message);
+        // Firebase may throw for non-existent emails — show generic message for security
+        showAlert($('.auth-card'), 'If this email is registered, you\'ll receive a reset link shortly. Check your spam folder too.', 'success');
+        btn.disabled = false;
+        btn.textContent = 'Send Reset Link';
       }
     });
   }
