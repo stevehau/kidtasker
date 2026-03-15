@@ -11,6 +11,17 @@ const Views = (() => {
     return strings.reduce((result, str, i) => result + str + (vals[i] ?? ''), '');
   }
 
+  // Check if email verification is required before proceeding (Firebase mode only)
+  function requireVerifiedEmail(container) {
+    if (USE_LOCAL_STORAGE) return true; // skip in demo mode
+    const user = Store.getCurrentUser();
+    if (user && user.emailVerified === false) {
+      showAlert(container, 'Please verify your email address before publishing worksheets. Check your inbox for a verification link, then refresh this page.', 'danger');
+      return false;
+    }
+    return true;
+  }
+
   function showAlert(container, msg, type = 'danger') {
     const el = container.querySelector('.alert-slot') || container;
     const alertEl = document.createElement('div');
@@ -1016,6 +1027,8 @@ const Views = (() => {
     // Publish & Print button
     if ($('#btn-publish')) {
       $('#btn-publish').addEventListener('click', async () => {
+        if (!requireVerifiedEmail($main())) return;
+
         const y = parseInt($('#ws-year').value);
         const w = parseInt($('#ws-week').value);
         const btn = $('#btn-publish');
@@ -1804,8 +1817,7 @@ const Views = (() => {
           <thead>
             <tr>
               <th>Name</th>
-              <th>Login Email</th>
-              <th>Recovery Email</th>
+              <th>Email</th>
               <th>Actions</th>
             </tr>
           </thead>
@@ -1817,9 +1829,8 @@ const Views = (() => {
                   ${m.uid === currentUid ? '<span class="badge badge-info" style="margin-left:6px">You</span>' : ''}
                 </td>
                 <td>${m.email}</td>
-                <td>${m.realEmail || '<span class="text-muted">Not set</span>'}</td>
                 <td>
-                  <button class="btn btn-sm btn-outline btn-edit-member" data-uid="${m.uid}" data-name="${m.displayName}" data-email="${m.email}" data-real-email="${m.realEmail || ''}">Edit</button>
+                  <button class="btn btn-sm btn-outline btn-edit-member" data-uid="${m.uid}" data-name="${m.displayName}" data-email="${m.email}">Edit</button>
                   <button class="btn btn-sm btn-outline btn-reset-pw" data-uid="${m.uid}" data-name="${m.displayName}">Reset Password</button>
                   ${m.uid !== currentUid ? html`<button class="btn btn-sm btn-danger btn-remove-member" data-uid="${m.uid}" data-name="${m.displayName}">Remove</button>` : ''}
                 </td>
@@ -1878,13 +1889,9 @@ const Views = (() => {
             <input type="text" class="form-control" id="profile-name" value="${Store.getCurrentUser().displayName || ''}" style="max-width:300px">
           </div>
           <div class="form-group">
-            <label>Login Email</label>
+            <label>Email</label>
             <input type="email" class="form-control" id="profile-email" value="${Store.getCurrentUser().email}" style="max-width:300px">
-          </div>
-          <div class="form-group">
-            <label>Recovery Email (real email for password resets)</label>
-            <input type="email" class="form-control" id="profile-real-email" value="${members.find(m => m.uid === currentUid)?.realEmail || ''}" style="max-width:300px" placeholder="your.real.email@gmail.com">
-            <p class="text-muted mt-1" style="font-size:0.8rem">This email is used when another parent resets your password. The new temporary password will be shown to the admin who resets it — share it with the affected user securely.</p>
+            <p class="text-muted mt-1" style="font-size:0.8rem">Used for login and password recovery.</p>
           </div>
           <button type="submit" class="btn btn-primary">Save Profile</button>
         </form>
@@ -1999,7 +2006,7 @@ const Views = (() => {
     // Edit member
     document.querySelectorAll('.btn-edit-member').forEach(btn => {
       btn.addEventListener('click', () => {
-        showEditMemberModal(btn.dataset.uid, btn.dataset.name, btn.dataset.email, btn.dataset.realEmail, async () => {
+        showEditMemberModal(btn.dataset.uid, btn.dataset.name, btn.dataset.email, async () => {
           await renderSettings(family);
         });
       });
@@ -2031,8 +2038,7 @@ const Views = (() => {
       try {
         await Store.updateUserProfile(currentUid, {
           displayName: $('#profile-name').value.trim(),
-          email: $('#profile-email').value.trim(),
-          realEmail: $('#profile-real-email').value.trim()
+          email: $('#profile-email').value.trim()
         });
         document.getElementById('nav-username').textContent = $('#profile-name').value.trim();
         showAlert($main(), 'Profile updated.', 'success');
@@ -2070,7 +2076,7 @@ const Views = (() => {
     });
   }
 
-  function showEditMemberModal(uid, name, email, realEmail, onSave) {
+  function showEditMemberModal(uid, name, email, onSave) {
     const overlay = document.createElement('div');
     overlay.className = 'modal-overlay';
     overlay.innerHTML = html`
@@ -2083,13 +2089,9 @@ const Views = (() => {
             <input type="text" class="form-control" id="em-name" value="${name}" required>
           </div>
           <div class="form-group">
-            <label>Login Email</label>
+            <label>Email</label>
             <input type="email" class="form-control" id="em-email" value="${email}" required>
-          </div>
-          <div class="form-group">
-            <label>Recovery Email</label>
-            <input type="email" class="form-control" id="em-real-email" value="${realEmail}" placeholder="real.email@gmail.com">
-            <p class="text-muted mt-1" style="font-size:0.8rem">Used for password recovery notifications.</p>
+            <p class="text-muted mt-1" style="font-size:0.8rem">Used for login and password recovery.</p>
           </div>
           <div class="modal-actions">
             <button type="button" class="btn btn-outline btn-cancel">Cancel</button>
@@ -2107,8 +2109,7 @@ const Views = (() => {
       try {
         await Store.updateUserProfile(uid, {
           displayName: overlay.querySelector('#em-name').value.trim(),
-          email: overlay.querySelector('#em-email').value.trim(),
-          realEmail: overlay.querySelector('#em-real-email').value.trim()
+          email: overlay.querySelector('#em-email').value.trim()
         });
         overlay.remove();
         if (onSave) onSave();
@@ -2313,6 +2314,7 @@ const Views = (() => {
       // Publish draft button
       if ($('#btn-publish-draft')) {
         $('#btn-publish-draft').addEventListener('click', async () => {
+          if (!requireVerifiedEmail($main())) return;
           // Check if previous week's worksheet has been submitted
           const prevWeekNumber = worksheet.weekNumber === 1 ? 53 : worksheet.weekNumber - 1;
           const prevYear = worksheet.weekNumber === 1 ? worksheet.year - 1 : worksheet.year;
