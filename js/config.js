@@ -13,16 +13,16 @@
 // ============================================================
 
 const FIREBASE_CONFIG = {
-  apiKey: "YOUR_API_KEY",
-  authDomain: "YOUR_PROJECT.firebaseapp.com",
-  projectId: "YOUR_PROJECT_ID",
-  storageBucket: "YOUR_PROJECT.appspot.com",
-  messagingSenderId: "YOUR_SENDER_ID",
-  appId: "YOUR_APP_ID"
+  apiKey: "AIzaSyDd5RIm8zmS8yOxOz4eTE9kLQ9V0TYZ6oo",
+  authDomain: "kidtasker-d937a.firebaseapp.com",
+  projectId: "kidtasker-d937a",
+  storageBucket: "kidtasker-d937a.firebasestorage.app",
+  messagingSenderId: "1063131733945",
+  appId: "1:1063131733945:web:3aeef184b8f921b77aa068"
 };
 
-// Set to true to use localStorage instead of Firebase (for demo/offline use)
-const USE_LOCAL_STORAGE = true;
+// Set to false to use Firebase, true for localStorage demo mode
+const USE_LOCAL_STORAGE = false;
 
 // App configuration
 const APP_CONFIG = {
