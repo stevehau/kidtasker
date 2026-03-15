@@ -354,7 +354,12 @@ const Views = (() => {
 
     // Load recent worksheets
     if (children.length > 0) {
-      const allSheets = await Store.getWorksheets(family.id);
+      let allSheets = [];
+      try {
+        allSheets = await Store.getWorksheets(family.id);
+      } catch (err) {
+        console.error('Failed to load worksheets:', err);
+      }
       const recent = allSheets.slice(0, 10);
       const container = $('#recent-worksheets');
 

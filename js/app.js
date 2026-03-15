@@ -6,6 +6,14 @@ const App = (() => {
   let currentFamily = null;
   let isInitialized = false;
 
+  // Timeout wrapper to prevent Firestore queries from hanging forever
+  function withTimeout(promise, ms = 10000, label = 'Operation') {
+    return Promise.race([
+      promise,
+      new Promise((_, reject) => setTimeout(() => reject(new Error(`${label} timed out after ${ms/1000}s. Check your internet connection and Firestore rules.`)), ms))
+    ]);
+  }
+
   function showNavbar(show) {
     const nav = document.getElementById('navbar');
     nav.classList.toggle('hidden', !show);
@@ -27,12 +35,17 @@ const App = (() => {
 
       // Load family
       try {
-        currentFamily = await Store.getFamily(user.uid);
+        currentFamily = await withTimeout(Store.getFamily(user.uid), 10000, 'Loading family data');
       } catch (err) {
         console.error('Failed to load family:', err);
         // Show error to user instead of hanging
         const main = document.getElementById('main-content');
-        if (main) main.innerHTML = '<div style="padding:40px;text-align:center"><h2>Connection Error</h2><p style="color:#666">Could not connect to the database. Error: ' + err.message + '</p><button onclick="location.reload()" style="margin-top:12px;padding:8px 20px;cursor:pointer">Retry</button></div>';
+        if (main) main.innerHTML = `<div style="padding:40px;text-align:center">
+          <h2>Connection Error</h2>
+          <p style="color:#666;max-width:500px;margin:12px auto">${err.message}</p>
+          <p style="color:#999;font-size:0.85rem;max-width:500px;margin:8px auto">Make sure your Firestore security rules are published in the Firebase Console. The rules should allow read/write for authenticated users.</p>
+          <button onclick="location.reload()" style="margin-top:12px;padding:8px 20px;cursor:pointer;border-radius:6px;border:1px solid #ccc;background:#f5f5f5">Retry</button>
+        </div>`;
         showNavbar(false);
         return;
       }
@@ -101,7 +114,14 @@ const App = (() => {
 
     // Need family setup
     if (!currentFamily && route !== 'login' && route !== 'register') {
-      currentFamily = await Store.getFamily(Store.getCurrentUser().uid);
+      try {
+        currentFamily = await withTimeout(Store.getFamily(Store.getCurrentUser().uid), 10000, 'Loading family');
+      } catch (err) {
+        console.error('Failed to load family in navigate:', err);
+        const main = document.getElementById('main-content');
+        if (main) main.innerHTML = `<div style="padding:40px;text-align:center"><h2>Connection Error</h2><p style="color:#666">${err.message}</p><button onclick="location.reload()" style="margin-top:12px;padding:8px 20px;cursor:pointer">Retry</button></div>`;
+        return;
+      }
       if (!currentFamily) {
         showNavbar(false);
         return Views.renderFamilySetup();

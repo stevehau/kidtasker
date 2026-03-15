@@ -661,8 +661,8 @@ const Store = (() => {
     },
 
     async getChildren(familyId) {
-      const snap = await db.collection('children').where('familyId', '==', familyId).orderBy('name').get();
-      return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      const snap = await db.collection('children').where('familyId', '==', familyId).get();
+      return snap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => (a.name || '').localeCompare(b.name || ''));
     },
 
     async addChild(familyId, name, age, birthday) {
@@ -751,15 +751,14 @@ const Store = (() => {
       if (childId) q = q.where('childId', '==', childId);
       if (year) q = q.where('year', '==', year);
       if (weekNum) q = q.where('weekNumber', '==', weekNum);
-      const snap = await q.orderBy('createdAt', 'desc').get();
-      return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      const snap = await q.get();
+      return snap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
     },
 
     async getChildWorksheets(childId) {
       const snap = await db.collection('worksheets')
-        .where('childId', '==', childId)
-        .orderBy('createdAt', 'desc').get();
-      return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        .where('childId', '==', childId).get();
+      return snap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
     },
 
     async createWorksheet(familyId, childId, childName, year, weekNum, items) {
@@ -805,10 +804,9 @@ const Store = (() => {
         .where('familyId', '==', familyId)
         .where('childId', '==', childId)
         .where('year', '==', year)
-        .where('weekNumber', '==', weekNum)
-        .where('status', '==', 'draft')
-        .limit(1).get();
-      return snap.empty ? null : { id: snap.docs[0].id, ...snap.docs[0].data() };
+        .where('weekNumber', '==', weekNum).get();
+      const draft = snap.docs.map(d => ({ id: d.id, ...d.data() })).find(w => w.status === 'draft');
+      return draft || null;
     },
 
     async saveDraftWorksheet(familyId, childId, childName, year, weekNum, items) {
@@ -820,9 +818,9 @@ const Store = (() => {
         .where('familyId', '==', familyId)
         .where('childId', '==', childId)
         .where('year', '==', year)
-        .where('weekNumber', '==', weekNum)
-        .where('status', '==', 'draft')
-        .limit(1).get();
+        .where('weekNumber', '==', weekNum).get();
+      // Filter draft client-side to avoid needing composite index
+      const draftDocs = snap.docs.filter(d => d.data().status === 'draft');
 
       const itemsData = items.map((item, i) => ({
         index: i,
@@ -834,9 +832,9 @@ const Store = (() => {
         results: item.results || {}
       }));
 
-      if (!snap.empty) {
+      if (draftDocs.length > 0) {
         // Update existing draft
-        const docId = snap.docs[0].id;
+        const docId = draftDocs[0].id;
         await db.collection('worksheets').doc(docId).update({
           items: itemsData,
           lastEditedBy: currentUser?.displayName || 'Unknown',
@@ -911,31 +909,32 @@ const Store = (() => {
     async getLastWorksheet(familyId, childId) {
       const snap = await db.collection('worksheets')
         .where('familyId', '==', familyId)
-        .where('childId', '==', childId)
-        .orderBy('createdAt', 'desc').limit(1).get();
-      return snap.empty ? null : { id: snap.docs[0].id, ...snap.docs[0].data() };
+        .where('childId', '==', childId).get();
+      if (snap.empty) return null;
+      const docs = snap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
+      return docs[0] || null;
     },
 
     async getPreviousReviewedWorksheet(familyId, childId, excludeId) {
       const snap = await db.collection('worksheets')
         .where('familyId', '==', familyId)
-        .where('childId', '==', childId)
-        .where('status', 'in', ['reviewed', 'scanned'])
-        .orderBy('createdAt', 'desc').limit(5).get();
-      const docs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-      return docs.find(d => d.id !== excludeId) || null;
+        .where('childId', '==', childId).get();
+      const docs = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+        .filter(d => d.id !== excludeId && (d.status === 'reviewed' || d.status === 'scanned'))
+        .sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
+      return docs[0] || null;
     },
 
     async getAnalyticsData(familyId, childId, startDate, endDate) {
       let q = db.collection('worksheets').where('familyId', '==', familyId);
       if (childId) q = q.where('childId', '==', childId);
-      const snap = await q.orderBy('weekStartDate').get();
+      const snap = await q.get();
       return snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(w => {
         let ok = w.status === 'scanned' || w.status === 'reviewed';
         if (startDate) ok = ok && w.weekStartDate >= startDate;
         if (endDate) ok = ok && w.weekStartDate <= endDate;
         return ok;
-      });
+      }).sort((a, b) => (a.weekStartDate || '').localeCompare(b.weekStartDate || ''));
     },
 
     // Admin stubs for Firebase mode (user management handled by Firebase Auth)
