@@ -1391,13 +1391,14 @@ const Views = (() => {
 
       const detectionMethod = result.qrDetected ? 'QR code' : 'text recognition';
       const rotationNote = detailedResult.rotation ? ` (rotated ${detailedResult.rotation}&deg;)` : '';
+      const skewNote = detailedResult.skewCorrected ? `, deskewed ${Math.abs(detailedResult.skewCorrected).toFixed(1)}&deg;` : '';
       const regMarkNote = detailedResult.regMarksFound >= 3 ? 'perspective-corrected' : 'estimated alignment';
       const itemCount = detailedResult.items ? detailedResult.items.length : 0;
 
       resultsArea.innerHTML = html`
         <div class="alert alert-success">
           <strong>Worksheet matched!</strong> ${worksheet.childName}, Week ${worksheet.weekNumber} ${worksheet.year}
-          <br><small>Form ID: ${worksheet.serialNumber} &mdash; ${detectionMethod}${rotationNote}, ${regMarkNote}, ${detailedResult.regMarksFound || 0}/4 reg marks</small>
+          <br><small>Form ID: ${worksheet.serialNumber} &mdash; ${detectionMethod}${rotationNote}${skewNote}, ${regMarkNote}, ${detailedResult.regMarksFound || 0}/4 reg marks</small>
         </div>
         <p class="text-muted mb-2">
           Detected <strong>parent confirmation</strong> checkboxes for ${itemCount} task(s).

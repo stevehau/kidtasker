@@ -105,6 +105,151 @@ const OCRProcessor = (() => {
     return null;
   }
 
+  // ---- Deskew (straighten rotated scans) ----
+
+  // Detect the dominant skew angle of a scanned page and rotate to correct it.
+  // Uses edge detection + angle histogram (simplified Hough approach).
+  // Returns { canvas, angle } where angle is the correction applied in degrees.
+  function deskewCanvas(canvas) {
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    const w = canvas.width;
+    const h = canvas.height;
+
+    // Work on a downscaled version for speed
+    const SCALE = Math.min(1, 800 / Math.max(w, h));
+    const sw = Math.round(w * SCALE);
+    const sh = Math.round(h * SCALE);
+    const small = document.createElement('canvas');
+    small.width = sw;
+    small.height = sh;
+    const sctx = small.getContext('2d', { willReadFrequently: true });
+    sctx.drawImage(canvas, 0, 0, sw, sh);
+
+    const imageData = sctx.getImageData(0, 0, sw, sh);
+    const data = imageData.data;
+
+    // Convert to grayscale array
+    const gray = new Uint8Array(sw * sh);
+    for (let i = 0; i < sw * sh; i++) {
+      gray[i] = Math.round((data[i * 4] + data[i * 4 + 1] + data[i * 4 + 2]) / 3);
+    }
+
+    // Sobel edge detection (horizontal edges — good for detecting table rows)
+    const edges = new Float32Array(sw * sh);
+    for (let y = 1; y < sh - 1; y++) {
+      for (let x = 1; x < sw - 1; x++) {
+        // Sobel Y kernel (detects horizontal lines)
+        const gy = -gray[(y - 1) * sw + (x - 1)] - 2 * gray[(y - 1) * sw + x] - gray[(y - 1) * sw + (x + 1)]
+                  + gray[(y + 1) * sw + (x - 1)] + 2 * gray[(y + 1) * sw + x] + gray[(y + 1) * sw + (x + 1)];
+        // Sobel X kernel (detects vertical lines)
+        const gx = -gray[(y - 1) * sw + (x - 1)] + gray[(y - 1) * sw + (x + 1)]
+                  - 2 * gray[y * sw + (x - 1)] + 2 * gray[y * sw + (x + 1)]
+                  - gray[(y + 1) * sw + (x - 1)] + gray[(y + 1) * sw + (x + 1)];
+        edges[y * sw + x] = Math.sqrt(gx * gx + gy * gy);
+      }
+    }
+
+    // Find edge threshold (top 15% of edge magnitudes)
+    const sorted = Array.from(edges).sort((a, b) => a - b);
+    const edgeThreshold = sorted[Math.floor(sorted.length * 0.85)];
+    if (edgeThreshold < 20) {
+      console.log('[OCR Deskew] No strong edges found, skipping deskew');
+      return { canvas, angle: 0 };
+    }
+
+    // Angle histogram: for each strong edge pixel, compute gradient direction
+    // We only care about angles near 0° and 90° (i.e., near-horizontal/vertical lines)
+    // Search range: -15° to +15° in 0.1° increments
+    const BINS = 301; // -15.0 to +15.0 in 0.1 steps
+    const histogram = new Float32Array(BINS);
+
+    for (let y = 1; y < sh - 1; y++) {
+      for (let x = 1; x < sw - 1; x++) {
+        if (edges[y * sw + x] < edgeThreshold) continue;
+
+        const gy = -gray[(y - 1) * sw + (x - 1)] - 2 * gray[(y - 1) * sw + x] - gray[(y - 1) * sw + (x + 1)]
+                  + gray[(y + 1) * sw + (x - 1)] + 2 * gray[(y + 1) * sw + x] + gray[(y + 1) * sw + (x + 1)];
+        const gx = -gray[(y - 1) * sw + (x - 1)] + gray[(y - 1) * sw + (x + 1)]
+                  - 2 * gray[y * sw + (x - 1)] + 2 * gray[y * sw + (x + 1)]
+                  - gray[(y + 1) * sw + (x - 1)] + gray[(y + 1) * sw + (x + 1)];
+
+        // Angle of the edge (perpendicular to gradient direction)
+        let angle = Math.atan2(gy, gx) * 180 / Math.PI;
+
+        // Normalize to -15..+15 range (edges near horizontal = angle near 0 or 180)
+        // Horizontal lines have gradient pointing up/down (angle ~90 or ~-90)
+        // So the LINE angle = gradient angle - 90
+        let lineAngle = angle - 90;
+        // Wrap to -90..+90
+        while (lineAngle > 90) lineAngle -= 180;
+        while (lineAngle < -90) lineAngle += 180;
+
+        // We only care about near-horizontal lines (angle near 0)
+        if (lineAngle >= -15 && lineAngle <= 15) {
+          const bin = Math.round((lineAngle + 15) * 10);
+          if (bin >= 0 && bin < BINS) {
+            histogram[bin] += edges[y * sw + x]; // weight by edge strength
+          }
+        }
+      }
+    }
+
+    // Smooth the histogram
+    const smoothed = new Float32Array(BINS);
+    const KERNEL = 5;
+    for (let i = 0; i < BINS; i++) {
+      let sum = 0, count = 0;
+      for (let k = -KERNEL; k <= KERNEL; k++) {
+        const idx = i + k;
+        if (idx >= 0 && idx < BINS) {
+          sum += histogram[idx];
+          count++;
+        }
+      }
+      smoothed[i] = sum / count;
+    }
+
+    // Find peak
+    let peakBin = 150; // default = 0°
+    let peakVal = 0;
+    for (let i = 0; i < BINS; i++) {
+      if (smoothed[i] > peakVal) {
+        peakVal = smoothed[i];
+        peakBin = i;
+      }
+    }
+
+    const skewAngle = (peakBin - 150) / 10; // convert bin to degrees
+
+    console.log(`[OCR Deskew] Detected skew angle: ${skewAngle.toFixed(2)}°`);
+
+    // Only correct if skew is significant (> 0.5°) but not too large (< 15°)
+    if (Math.abs(skewAngle) < 0.5) {
+      console.log('[OCR Deskew] Skew too small, no correction needed');
+      return { canvas, angle: 0 };
+    }
+
+    // Rotate the full-resolution canvas to correct the skew
+    const corrected = document.createElement('canvas');
+    corrected.width = w;
+    corrected.height = h;
+    const cctx = corrected.getContext('2d', { willReadFrequently: true });
+
+    // Rotate around center
+    cctx.save();
+    cctx.translate(w / 2, h / 2);
+    cctx.rotate((-skewAngle * Math.PI) / 180);
+    cctx.translate(-w / 2, -h / 2);
+    // Fill with white background to avoid black edges
+    cctx.fillStyle = '#FFFFFF';
+    cctx.fillRect(0, 0, w, h);
+    cctx.drawImage(canvas, 0, 0);
+    cctx.restore();
+
+    console.log(`[OCR Deskew] Applied ${(-skewAngle).toFixed(2)}° correction`);
+    return { canvas: corrected, angle: skewAngle };
+  }
+
   // ---- Registration Mark Detection ----
 
   // Scan a region of the image for an L-shaped corner mark
@@ -486,6 +631,11 @@ const OCRProcessor = (() => {
         }
         if (onProgress) onProgress(30);
 
+        // Step 3b: Deskew — straighten small rotational skew (up to ±15°)
+        const deskewResult = deskewCanvas(canvas);
+        canvas = deskewResult.canvas;
+        if (onProgress) onProgress(35);
+
         // Step 4: Try Tesseract if no QR
         let formId = qrResult ? qrResult.formId : null;
         if (!formId) {
@@ -550,6 +700,7 @@ const OCRProcessor = (() => {
           success: true,
           serialNumber: formId,
           rotation: rotation,
+          skewCorrected: deskewResult.angle,
           qrDetected: !!qrResult,
           regMarksFound: regMarks.count,
           items: checkboxResults ? checkboxResults.results : [],
