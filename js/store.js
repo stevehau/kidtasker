@@ -576,6 +576,12 @@ const Store = (() => {
       await cred.user.updateProfile({ displayName });
       // Send email verification
       try { await cred.user.sendEmailVerification(); } catch (e) { /* non-fatal */ }
+      // Save user profile to Firestore so getFamilyMembers can look it up
+      try {
+        await db.collection('users').doc(cred.user.uid).set({
+          email, displayName, createdAt: new Date().toISOString()
+        }, { merge: true });
+      } catch (e) { console.warn('Could not save user profile:', e); }
       currentUser = { uid: cred.user.uid, email: cred.user.email, displayName, emailVerified: cred.user.emailVerified };
       return currentUser;
     },
@@ -588,6 +594,14 @@ const Store = (() => {
         displayName: cred.user.displayName,
         emailVerified: cred.user.emailVerified
       };
+      // Update user profile in Firestore (ensures it exists and stays current)
+      try {
+        await db.collection('users').doc(cred.user.uid).set({
+          email: cred.user.email,
+          displayName: cred.user.displayName || '',
+          lastLogin: new Date().toISOString()
+        }, { merge: true });
+      } catch (e) { console.warn('Could not update user profile:', e); }
       return currentUser;
     },
 
