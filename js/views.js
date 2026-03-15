@@ -301,7 +301,14 @@ const Views = (() => {
   // DASHBOARD VIEW
   // ============================================================
   async function renderDashboard(family) {
-    const children = await Store.getChildren(family.id);
+    let children;
+    try {
+      children = await Store.getChildren(family.id);
+    } catch (err) {
+      console.error('Dashboard load error:', err);
+      $main().innerHTML = '<div style="padding:40px;text-align:center"><h2>Database Error</h2><p style="color:#666">' + err.message + '</p><p style="color:#999;font-size:0.85rem">This usually means Firestore security rules need updating. Open the browser console (F12) for details.</p><button onclick="location.reload()" style="margin-top:12px;padding:8px 20px;cursor:pointer">Retry</button></div>';
+      return;
+    }
     const { year, week } = getCurrentWeekInfo();
 
     $main().innerHTML = html`
