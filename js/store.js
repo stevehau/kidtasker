@@ -1035,7 +1035,77 @@ const Store = (() => {
       });
       const doc = await db.collection('families').doc(familyId).get();
       return { id: doc.id, ...doc.data() };
-    }
+    },
+
+    // ---- Parent Invite System ----
+
+    // Generate a cryptographically random invite token
+    _generateInviteToken() {
+      const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+      let token = '';
+      const arr = new Uint8Array(24);
+      crypto.getRandomValues(arr);
+      for (let i = 0; i < arr.length; i++) token += chars[arr[i] % chars.length];
+      return token;
+    },
+
+    async createInvite(familyId, invitedByUid, invitedByName, inviteeEmail) {
+      const token = this._generateInviteToken();
+      const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(); // 7 days
+      const data = {
+        token,
+        familyId,
+        invitedByUid,
+        invitedByName: invitedByName || 'A parent',
+        inviteeEmail: (inviteeEmail || '').toLowerCase().trim(),
+        status: 'pending', // pending | accepted | revoked | expired
+        createdAt: new Date().toISOString(),
+        expiresAt,
+      };
+      await db.collection('invites').doc(token).set(data);
+      return data;
+    },
+
+    async getInviteByToken(token) {
+      const doc = await db.collection('invites').doc(token).get();
+      if (!doc.exists) return null;
+      return { id: doc.id, ...doc.data() };
+    },
+
+    async getPendingInvites(familyId) {
+      const snap = await db.collection('invites')
+        .where('familyId', '==', familyId)
+        .where('status', '==', 'pending')
+        .get();
+      return snap.docs.map(d => ({ id: d.id, ...d.data() }))
+        .sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
+    },
+
+    async acceptInvite(token, userId) {
+      const invite = await this.getInviteByToken(token);
+      if (!invite) throw new Error('Invite not found.');
+      if (invite.status !== 'pending') throw new Error(`This invite has already been ${invite.status}.`);
+      if (new Date(invite.expiresAt) < new Date()) {
+        await db.collection('invites').doc(token).update({ status: 'expired' });
+        throw new Error('This invite has expired. Ask the other parent to send a new one.');
+      }
+      // Add user to family
+      await db.collection('families').doc(invite.familyId).update({
+        members: firebase.firestore.FieldValue.arrayUnion(userId)
+      });
+      // Mark invite as accepted
+      await db.collection('invites').doc(token).update({
+        status: 'accepted',
+        acceptedByUid: userId,
+        acceptedAt: new Date().toISOString(),
+      });
+      const famDoc = await db.collection('families').doc(invite.familyId).get();
+      return { id: famDoc.id, ...famDoc.data() };
+    },
+
+    async revokeInvite(token) {
+      await db.collection('invites').doc(token).update({ status: 'revoked' });
+    },
   };
 
   // ---- Public API ----

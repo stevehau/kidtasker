@@ -87,7 +87,14 @@ const App = (() => {
       showNavbar(false);
       currentFamily = null;
       isInitialized = false;
-      Views.renderLogin();
+      // Check if user is on an invite URL before defaulting to login
+      const hash = window.location.hash || '';
+      const inviteMatch = hash.match(/^#\/invite\/(.+)$/);
+      if (inviteMatch) {
+        Views.renderInviteAccept(inviteMatch[1]);
+      } else {
+        Views.renderLogin();
+      }
     }
   }
 
@@ -103,6 +110,12 @@ const App = (() => {
       mainEl.style.backgroundSize = '';
       mainEl.style.backgroundPosition = '';
       mainEl.style.backgroundAttachment = '';
+    }
+
+    // Invite route works for both logged-in and not-logged-in users
+    if (route === 'invite' && param) {
+      showNavbar(false);
+      return Views.renderInviteAccept(param);
     }
 
     // Public routes
@@ -233,8 +246,12 @@ const App = (() => {
       if (Store.getCurrentUser()) {
         navigate(window.location.hash);
       } else {
-        const route = window.location.hash.replace('#/', '');
-        if (route === 'register') Views.renderRegister();
+        const hash = window.location.hash.replace('#/', '');
+        const parts = hash.split('/');
+        const route = parts[0];
+        const param = parts[1] || null;
+        if (route === 'invite' && param) Views.renderInviteAccept(param);
+        else if (route === 'register') Views.renderRegister();
         else if (route === 'reset-password') Views.renderResetPassword();
         else Views.renderLogin();
       }

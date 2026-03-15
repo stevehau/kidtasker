@@ -1828,6 +1828,12 @@ const Views = (() => {
     } catch (e) {}
     family.hasWorksheets = hasWorksheets;
 
+    // Load pending invites
+    let pendingInvites = [];
+    try {
+      if (!USE_LOCAL_STORAGE) pendingInvites = await Store.getPendingInvites(family.id);
+    } catch (e) { console.warn('Could not load invites:', e); }
+
     $main().innerHTML = html`
       <div class="page-header">
         <h1 class="page-title">Settings</h1>
@@ -1904,14 +1910,44 @@ const Views = (() => {
             <button class="btn btn-primary btn-sm" id="btn-save-family-name">Save</button>
           </div>
         </div>
-        <div class="form-group">
-          <label>Family Join Code</label>
-          <div class="flex gap-1 items-center">
-            <code style="background:var(--bg);padding:8px 14px;border-radius:var(--radius);font-size:0.95rem;font-weight:600">${family.id}</code>
-            <button class="btn btn-outline btn-sm" id="btn-copy-code">Copy</button>
+        <!-- Invite a Parent -->
+        <div class="form-group" style="border-top:1px solid #eee;padding-top:16px;margin-top:8px">
+          <label style="font-weight:600;font-size:0.95rem">Invite a Parent</label>
+          <p class="text-muted mb-2" style="font-size:0.82rem">Send an invite link so another parent can join your family. The link expires in 7 days.</p>
+          <div style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap">
+            <div style="flex:1;min-width:200px">
+              <label style="font-size:0.8rem;color:#666">Their email (optional, for your reference)</label>
+              <input type="email" class="form-control" id="invite-email" placeholder="partner@example.com" style="max-width:300px">
+            </div>
+            <button class="btn btn-primary btn-sm" id="btn-send-invite">Create Invite Link</button>
           </div>
-          <p class="text-muted mt-1" style="font-size:0.8rem">Share this code with your co-parent so they can join the family account.</p>
+          <div id="invite-link-area" class="hidden" style="margin-top:12px;padding:12px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:var(--radius)">
+            <p style="font-size:0.85rem;font-weight:600;margin-bottom:6px;color:#166534">Invite link created!</p>
+            <div style="display:flex;gap:8px;align-items:center">
+              <input type="text" class="form-control" id="invite-link-value" readonly style="flex:1;font-size:0.82rem;background:#fff">
+              <button class="btn btn-outline btn-sm" id="btn-copy-invite">Copy Link</button>
+            </div>
+            <p class="text-muted mt-1" style="font-size:0.78rem">Share this link with the other parent via text, email, or any messaging app. They'll be able to create an account and join your family automatically.</p>
+          </div>
         </div>
+        ${pendingInvites.length > 0 ? html`
+        <div class="form-group" style="border-top:1px solid #eee;padding-top:12px;margin-top:8px">
+          <label style="font-size:0.85rem;font-weight:600">Pending Invites</label>
+          <div style="margin-top:6px">
+            ${pendingInvites.map(inv => {
+              const isExpired = new Date(inv.expiresAt) < new Date();
+              const expiresIn = Math.max(0, Math.ceil((new Date(inv.expiresAt) - new Date()) / (1000 * 60 * 60 * 24)));
+              return html`
+                <div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid #f0f0f0;font-size:0.85rem" data-invite-token="${inv.token}">
+                  <span style="flex:1">${inv.inviteeEmail || 'No email specified'}</span>
+                  <span class="text-muted" style="font-size:0.78rem">${isExpired ? 'Expired' : `${expiresIn}d left`}</span>
+                  <button class="btn btn-sm btn-outline btn-revoke-invite" data-token="${inv.token}" style="font-size:0.75rem;padding:2px 8px;color:#dc3545;border-color:#dc3545">${isExpired ? 'Remove' : 'Revoke'}</button>
+                </div>
+              `;
+            }).join('')}
+          </div>
+        </div>
+        ` : ''}
         <div class="form-group">
           <label>Week Start Day</label>
           <p class="text-muted mb-2" style="font-size:0.85rem">Choose which day your week starts</p>
@@ -2060,19 +2096,52 @@ const Views = (() => {
       } catch (err) { showAlert($main(), err.message); }
     });
 
-    // Copy join code
-    $('#btn-copy-code').addEventListener('click', () => {
-      navigator.clipboard.writeText(family.id).then(() => {
-        showAlert($main(), 'Join code copied to clipboard.', 'success');
-      }).catch(() => {
-        // Fallback
-        const ta = document.createElement('textarea');
-        ta.value = family.id;
-        document.body.appendChild(ta);
-        ta.select();
-        document.execCommand('copy');
-        ta.remove();
-        showAlert($main(), 'Join code copied.', 'success');
+    // Invite a parent
+    $('#btn-send-invite').addEventListener('click', async () => {
+      const btn = $('#btn-send-invite');
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spinner"></span> Creating...';
+      try {
+        const email = ($('#invite-email').value || '').trim();
+        const user = Store.getCurrentUser();
+        const invite = await Store.createInvite(family.id, user.uid, user.displayName, email);
+        const inviteUrl = `${window.location.origin}${window.location.pathname}#/invite/${invite.token}`;
+        $('#invite-link-value').value = inviteUrl;
+        $('#invite-link-area').classList.remove('hidden');
+        showAlert($main(), 'Invite link created! Share it with the other parent.', 'success');
+      } catch (err) {
+        showAlert($main(), err.message);
+      } finally {
+        btn.disabled = false;
+        btn.textContent = 'Create Invite Link';
+      }
+    });
+
+    // Copy invite link
+    if ($('#btn-copy-invite')) {
+      $('#btn-copy-invite').addEventListener('click', () => {
+        const linkVal = $('#invite-link-value').value;
+        navigator.clipboard.writeText(linkVal).then(() => {
+          $('#btn-copy-invite').textContent = 'Copied!';
+          setTimeout(() => { $('#btn-copy-invite').textContent = 'Copy Link'; }, 2000);
+        }).catch(() => {
+          $('#invite-link-value').select();
+          document.execCommand('copy');
+          $('#btn-copy-invite').textContent = 'Copied!';
+          setTimeout(() => { $('#btn-copy-invite').textContent = 'Copy Link'; }, 2000);
+        });
+      });
+    }
+
+    // Revoke invites
+    document.querySelectorAll('.btn-revoke-invite').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const token = btn.dataset.token;
+        try {
+          await Store.revokeInvite(token);
+          btn.closest('[data-invite-token]').remove();
+          showAlert($main(), 'Invite revoked.', 'success');
+        } catch (err) { showAlert($main(), err.message); }
       });
     });
 
@@ -2472,6 +2541,246 @@ const Views = (() => {
     }
   }
 
+  // ============================================================
+  // INVITE ACCEPTANCE VIEW
+  // ============================================================
+  async function renderInviteAccept(token) {
+    const user = Store.getCurrentUser();
+
+    // Show loading while we validate the invite
+    $main().innerHTML = html`
+      <div class="splash-wrapper">
+        <div class="auth-container">
+          <div class="auth-card">
+            <div class="auth-title">Family Invite</div>
+            <div class="auth-subtitle">Loading invite details...</div>
+            <div class="alert-slot"></div>
+            <div style="text-align:center;padding:20px"><span class="spinner"></span></div>
+          </div>
+        </div>
+      </div>
+    `;
+
+    try {
+      const invite = await Store.getInviteByToken(token);
+
+      if (!invite) {
+        $main().innerHTML = html`
+          <div class="splash-wrapper">
+            <div class="auth-container">
+              <div class="auth-card">
+                <div class="auth-title">Invalid Invite</div>
+                <div class="alert alert-danger" style="margin-top:12px">
+                  This invite link is not valid. It may have been revoked or the link is incorrect.
+                </div>
+                <a href="#/login" class="btn btn-primary btn-block" style="margin-top:16px">Go to Login</a>
+              </div>
+            </div>
+          </div>
+        `;
+        return;
+      }
+
+      if (invite.status !== 'pending') {
+        $main().innerHTML = html`
+          <div class="splash-wrapper">
+            <div class="auth-container">
+              <div class="auth-card">
+                <div class="auth-title">Invite ${invite.status === 'accepted' ? 'Already Used' : invite.status === 'revoked' ? 'Revoked' : 'Expired'}</div>
+                <div class="alert alert-${invite.status === 'accepted' ? 'info' : 'danger'}" style="margin-top:12px">
+                  ${invite.status === 'accepted' ? 'This invite has already been accepted.' :
+                    invite.status === 'revoked' ? 'This invite was revoked by the sender.' :
+                    'This invite has expired.'}
+                  ${invite.status !== 'accepted' ? ' Ask the other parent to send a new invite.' : ''}
+                </div>
+                <a href="#/login" class="btn btn-primary btn-block" style="margin-top:16px">${user ? 'Go to Dashboard' : 'Go to Login'}</a>
+              </div>
+            </div>
+          </div>
+        `;
+        return;
+      }
+
+      // Check expiry
+      if (new Date(invite.expiresAt) < new Date()) {
+        $main().innerHTML = html`
+          <div class="splash-wrapper">
+            <div class="auth-container">
+              <div class="auth-card">
+                <div class="auth-title">Invite Expired</div>
+                <div class="alert alert-danger" style="margin-top:12px">
+                  This invite expired on ${new Date(invite.expiresAt).toLocaleDateString()}. Ask ${invite.invitedByName} to send a new one.
+                </div>
+                <a href="#/login" class="btn btn-primary btn-block" style="margin-top:16px">Go to Login</a>
+              </div>
+            </div>
+          </div>
+        `;
+        return;
+      }
+
+      // Valid invite — show acceptance UI
+      if (user) {
+        // Already logged in — offer to accept directly
+        $main().innerHTML = html`
+          <div class="splash-wrapper">
+            <div class="auth-container">
+              <div class="auth-card">
+                <div class="auth-title">You're Invited!</div>
+                <div class="auth-subtitle">${invite.invitedByName} invited you to join their family on Kid Tasker</div>
+                <div class="alert-slot"></div>
+                <div style="background:var(--bg);padding:16px;border-radius:var(--radius);margin:16px 0;text-align:center">
+                  <p style="font-size:0.85rem;color:#666;margin-bottom:4px">Signed in as</p>
+                  <p style="font-weight:600">${user.displayName || user.email}</p>
+                </div>
+                <button class="btn btn-primary btn-block btn-lg" id="btn-accept-invite">Join Family</button>
+                <a href="#/dashboard" class="auth-link" style="margin-top:12px">Cancel</a>
+              </div>
+            </div>
+          </div>
+        `;
+
+        $('#btn-accept-invite').addEventListener('click', async () => {
+          const btn = $('#btn-accept-invite');
+          btn.disabled = true;
+          btn.innerHTML = '<span class="spinner"></span> Joining...';
+          try {
+            await Store.acceptInvite(token, user.uid);
+            $main().innerHTML = html`
+              <div class="splash-wrapper">
+                <div class="auth-container">
+                  <div class="auth-card">
+                    <div class="auth-title">Welcome!</div>
+                    <div class="alert alert-success" style="margin-top:12px">
+                      You've joined the family! You now have full access to manage children, worksheets, and settings.
+                    </div>
+                    <a href="#/dashboard" class="btn btn-primary btn-block" style="margin-top:16px" onclick="location.reload()">Go to Dashboard</a>
+                  </div>
+                </div>
+              </div>
+            `;
+          } catch (err) {
+            showAlert($('.auth-card'), err.message);
+            btn.disabled = false;
+            btn.textContent = 'Join Family';
+          }
+        });
+      } else {
+        // Not logged in — show register/login with invite context
+        $main().innerHTML = html`
+          <div class="splash-wrapper">
+            <div class="auth-container">
+              <div class="auth-card">
+                <div class="auth-title">You're Invited!</div>
+                <div class="auth-subtitle">${invite.invitedByName} invited you to join their family on Kid Tasker</div>
+                <div class="alert-slot"></div>
+                <div class="tabs" style="margin-top:12px">
+                  <button class="tab active" data-tab="invite-register">Create Account</button>
+                  <button class="tab" data-tab="invite-login">I Have an Account</button>
+                </div>
+                <div id="tab-invite-register">
+                  <form id="invite-register-form">
+                    <div class="form-group">
+                      <label>Your Name</label>
+                      <input type="text" class="form-control" id="invite-reg-name" required placeholder="Your name">
+                    </div>
+                    <div class="form-group">
+                      <label>Email</label>
+                      <input type="email" class="form-control" id="invite-reg-email" required placeholder="you@example.com" value="${invite.inviteeEmail || ''}">
+                    </div>
+                    <div class="form-group">
+                      <label>Password</label>
+                      <input type="password" class="form-control" id="invite-reg-password" required minlength="6" placeholder="At least 6 characters">
+                    </div>
+                    <button type="submit" class="btn btn-primary btn-block btn-lg">Create Account &amp; Join Family</button>
+                  </form>
+                </div>
+                <div id="tab-invite-login" class="hidden">
+                  <form id="invite-login-form">
+                    <div class="form-group">
+                      <label>Email</label>
+                      <input type="email" class="form-control" id="invite-login-email" required placeholder="you@example.com" value="${invite.inviteeEmail || ''}">
+                    </div>
+                    <div class="form-group">
+                      <label>Password</label>
+                      <input type="password" class="form-control" id="invite-login-password" required placeholder="Your password">
+                    </div>
+                    <button type="submit" class="btn btn-primary btn-block btn-lg">Sign In &amp; Join Family</button>
+                  </form>
+                </div>
+              </div>
+            </div>
+          </div>
+        `;
+
+        // Tab switching
+        document.querySelectorAll('.tab').forEach(tab => {
+          tab.addEventListener('click', () => {
+            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            tab.classList.add('active');
+            $('#tab-invite-register').classList.toggle('hidden', tab.dataset.tab !== 'invite-register');
+            $('#tab-invite-login').classList.toggle('hidden', tab.dataset.tab !== 'invite-login');
+          });
+        });
+
+        // Register + accept
+        $('#invite-register-form').addEventListener('submit', async (e) => {
+          e.preventDefault();
+          const btn = e.target.querySelector('button[type=submit]');
+          btn.disabled = true;
+          btn.innerHTML = '<span class="spinner"></span> Creating account...';
+          try {
+            const name = $('#invite-reg-name').value.trim();
+            const email = $('#invite-reg-email').value.trim();
+            const password = $('#invite-reg-password').value;
+            if (!name) throw new Error('Please enter your name.');
+            const newUser = await Store.signUp(email, password, name);
+            await Store.acceptInvite(token, newUser.uid);
+            window.location.hash = '#/dashboard';
+            window.location.reload();
+          } catch (err) {
+            showAlert($('.auth-card'), err.message);
+            btn.disabled = false;
+            btn.textContent = 'Create Account & Join Family';
+          }
+        });
+
+        // Login + accept
+        $('#invite-login-form').addEventListener('submit', async (e) => {
+          e.preventDefault();
+          const btn = e.target.querySelector('button[type=submit]');
+          btn.disabled = true;
+          btn.innerHTML = '<span class="spinner"></span> Signing in...';
+          try {
+            const email = $('#invite-login-email').value.trim();
+            const password = $('#invite-login-password').value;
+            const loggedUser = await Store.signIn(email, password);
+            await Store.acceptInvite(token, loggedUser.uid);
+            window.location.hash = '#/dashboard';
+            window.location.reload();
+          } catch (err) {
+            showAlert($('.auth-card'), err.message);
+            btn.disabled = false;
+            btn.textContent = 'Sign In & Join Family';
+          }
+        });
+      }
+    } catch (err) {
+      console.error('Invite error:', err);
+      $main().innerHTML = html`
+        <div class="splash-wrapper">
+          <div class="auth-container">
+            <div class="auth-card">
+              <div class="auth-title">Error</div>
+              <div class="alert alert-danger" style="margin-top:12px">${err.message}</div>
+              <a href="#/login" class="btn btn-primary btn-block" style="margin-top:16px">Go to Login</a>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+  }
+
   // ---- Public API ----
   return {
     renderLogin,
@@ -2487,6 +2796,7 @@ const Views = (() => {
     renderScanner,
     renderAnalytics,
     renderAdmin: renderSettings,
-    renderSettings
+    renderSettings,
+    renderInviteAccept
   };
 })();
