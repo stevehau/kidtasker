@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Getting Started - Kid Tasker</title>
+  <link rel="icon" type="image/svg+xml" href="img/favicon.svg">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; color: #333; line-height: 1.7; background: #f8f9fa; }
+    .container { max-width: 720px; margin: 0 auto; padding: 40px 24px 60px; }
+    .back-link { display: inline-block; margin-bottom: 24px; color: #4a6cf7; text-decoration: none; font-size: 0.9rem; }
+    .back-link:hover { text-decoration: underline; }
+    h1 { font-size: 1.8rem; margin-bottom: 6px; color: #222; }
+    .subtitle { color: #888; font-size: 0.95rem; margin-bottom: 32px; }
+    h2 { font-size: 1.15rem; margin-top: 28px; margin-bottom: 8px; color: #222; }
+    p { margin-bottom: 14px; font-size: 0.95rem; }
+    a { color: #4a6cf7; }
+    .step { display: flex; gap: 14px; margin-bottom: 18px; }
+    .step-num { flex-shrink: 0; width: 28px; height: 28px; border-radius: 50%; background: #4a6cf7; color: #fff; font-weight: 700; font-size: 0.85rem; display: flex; align-items: center; justify-content: center; margin-top: 2px; }
+    .step-body { flex: 1; }
+    .step-body strong { color: #222; }
+    .tip { background: #eef3ff; border-left: 4px solid #4a6cf7; padding: 12px 16px; border-radius: 4px; margin: 18px 0; font-size: 0.9rem; }
+    .section-divider { border: none; border-top: 1px solid #e0e0e0; margin: 28px 0; }
+    @media print {
+      body { background: #fff; }
+      .container { padding: 20px 0; }
+      .back-link { display: none; }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <a href="index.html" class="back-link">&larr; Back to Kid Tasker</a>
+    <h1>Getting Started with Kid Tasker</h1>
+    <p class="subtitle">A quick guide to setting up your family's weekly task tracking.</p>
+
+    <h2>What is Kid Tasker?</h2>
+    <p>Kid Tasker helps families build positive habits by turning weekly chores and responsibilities into a printed checklist. Each week, you print a worksheet for each child. The child checks off tasks as they complete them, and at the end of the week a parent reviews the worksheet by scanning it back in. The system reads the checkboxes automatically and tracks progress over time through analytics.</p>
+
+    <hr class="section-divider">
+
+    <h2>Initial Setup</h2>
+
+    <div class="step">
+      <div class="step-num">1</div>
+      <div class="step-body"><strong>Create an account.</strong> Sign up with your email and password. This creates your parent account.</div>
+    </div>
+
+    <div class="step">
+      <div class="step-num">2</div>
+      <div class="step-body"><strong>Create your family.</strong> Give your family a name. If a second parent wants to join, go to Settings and send them an invite.</div>
+    </div>
+
+    <div class="step">
+      <div class="step-num">3</div>
+      <div class="step-body"><strong>Add your children.</strong> In Settings, add each child with their name and birthday. A set of default tasks will be pre-loaded for each child.</div>
+    </div>
+
+    <div class="step">
+      <div class="step-num">4</div>
+      <div class="step-body"><strong>Customize tasks.</strong> From the Dashboard, tap a child's name to open their Checklist. Here you can add, remove, reorder, and categorize tasks. Each task can be assigned to specific days of the week.</div>
+    </div>
+
+    <hr class="section-divider">
+
+    <h2>Weekly Workflow</h2>
+
+    <div class="step">
+      <div class="step-num">1</div>
+      <div class="step-body"><strong>Print the worksheet.</strong> Each week, go to the child's Checklist page and tap "Generate &amp; Print." This creates a PDF with all tasks, checkboxes for each day, and a QR code that identifies the worksheet. Print it on standard letter paper.</div>
+    </div>
+
+    <div class="step">
+      <div class="step-num">2</div>
+      <div class="step-body"><strong>Kids check off tasks.</strong> Throughout the week, your child marks the left checkbox for each task they complete. At the end of the week, a parent marks the right checkbox to confirm completion.</div>
+    </div>
+
+    <div class="step">
+      <div class="step-num">3</div>
+      <div class="step-body"><strong>Scan and submit.</strong> Go to the Submit page and upload a photo or flatbed scan of the completed worksheet. The system reads the QR code to identify the worksheet, then analyzes the checkboxes automatically. The image can be in any orientation.</div>
+    </div>
+
+    <div class="step">
+      <div class="step-num">4</div>
+      <div class="step-body"><strong>Review results.</strong> After scanning, you'll see a results table showing what the system detected for both child-reported and parent-reported checkboxes. You can correct any misreads before saving.</div>
+    </div>
+
+    <div class="tip">If your child marked tasks in blank rows that weren't pre-printed, the system will detect those too. You'll be prompted to name these "ad-hoc" tasks during review, and they can be added to future worksheets.</div>
+
+    <hr class="section-divider">
+
+    <h2>Analytics</h2>
+    <p>The Analytics page shows completion trends over time, broken down by category and day of week. The "Completion Rate Over Time" chart shows both child-reported and parent-reported results side by side, so you can see how closely they align. Category and day-of-week charts currently report parent-confirmed data only.</p>
+
+    <hr class="section-divider">
+
+    <h2>Exporting Data</h2>
+    <p>In Settings, each child has a "Download Data" button that exports all scored worksheet data as a CSV file. The export includes every task grouped by category, with columns for each date showing both child-reported and parent-reported results. The child's name is not included in the file for privacy.</p>
+
+    <hr class="section-divider">
+
+    <h2>Tips for Best Results</h2>
+    <p><strong>Printing:</strong> Print at actual size (100%) on standard letter paper. The worksheet has registration marks set inward from the edges, so you should not need "Fit to Page."</p>
+    <p><strong>Marking checkboxes:</strong> Use a pen, pencil, or marker. Any clear mark inside the box will be detected. The printed checkbox borders are intentionally very light so the scanner ignores them.</p>
+    <p><strong>Scanning:</strong> A flatbed scanner gives the best results. Phone photos also work. The image can be in any orientation &mdash; the system will auto-correct rotation.</p>
+    <p><strong>Multiple parents:</strong> Both parents have full access. Invite a second parent from Settings and they can generate worksheets, scan, and review results too.</p>
+  </div>
+</body>
+</html>
