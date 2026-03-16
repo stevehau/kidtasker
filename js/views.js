@@ -351,8 +351,8 @@ const Views = (() => {
               </div>
               <div class="child-actions">
                 <a href="#/checklist/${child.id}" class="btn btn-primary btn-sm">Edit Checklist</a>
-                <a href="#/worksheet/${child.id}" class="btn btn-success btn-sm">Worksheet</a>
-                <a href="#/analytics/${child.id}" class="btn btn-outline btn-sm">Analytics</a>
+                <a href="#/worksheet/${child.id}" class="btn btn-success btn-sm">Preview Worksheet</a>
+                <a href="#/analytics/${child.id}" class="btn btn-outline btn-sm">View Analytics</a>
               </div>
             </div>
           `).join('')}
