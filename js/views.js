@@ -626,7 +626,7 @@ const Views = (() => {
               ${APP_CONFIG.daysShort.map(d => `<label class="day-check"><input type="checkbox" value="${d}" checked> ${d}</label>`).join('')}
             </div>
           </div>
-          <button class="btn btn-primary" id="btn-add-task" data-tooltip="Add this task to the checklist">Add</button>
+          <button class="btn btn-primary" id="btn-add-task" data-tooltip="Add this task to the checklist" disabled>Add</button>
         </div>
       </div>
 
@@ -637,6 +637,17 @@ const Views = (() => {
         </div>
       </div>
     `;
+
+    // Validate Add button: enabled only when task name is non-empty AND at least one day is checked
+    function validateAddButton() {
+      const hasText = $('#new-task-text').value.trim().length > 0;
+      const hasDays = document.querySelectorAll('#new-task-days input:checked').length > 0;
+      $('#btn-add-task').disabled = !(hasText && hasDays);
+    }
+    $('#new-task-text').addEventListener('input', validateAddButton);
+    document.querySelectorAll('#new-task-days input').forEach(cb => {
+      cb.addEventListener('change', validateAddButton);
+    });
 
     // Add task
     $('#btn-add-task').addEventListener('click', async () => {
@@ -649,19 +660,21 @@ const Views = (() => {
       const cat = $('#new-task-category').value;
       const pri = $('#new-task-priority').value;
       const days = Array.from(document.querySelectorAll('#new-task-days input:checked')).map(cb => cb.value);
-      await Store.addTaskTemplate(family.id, childId, text, cat, pri, days.length ? days : APP_CONFIG.daysShort);
+      if (days.length === 0) return;
+      await Store.addTaskTemplate(family.id, childId, text, cat, pri, days);
       tasks = await Store.getTaskTemplates(family.id, childId);
       $('#task-list').innerHTML = renderTaskList(tasks);
       $('.card-title:last-of-type') && document.querySelectorAll('.card-title')[1] &&
         (document.querySelectorAll('.card-title')[1].textContent = `Current Items (${tasks.length}/${APP_CONFIG.maxItemsPerDay})`);
       $('#new-task-text').value = '';
+      validateAddButton();
       $('#new-task-text').focus();
       bindTaskActions(family.id, childId);
     });
 
-    // Enter key to add
+    // Enter key to add (only if button is enabled)
     $('#new-task-text').addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') { e.preventDefault(); $('#btn-add-task').click(); }
+      if (e.key === 'Enter' && !$('#btn-add-task').disabled) { e.preventDefault(); $('#btn-add-task').click(); }
     });
 
     // Copy from last week
