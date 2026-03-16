@@ -352,9 +352,11 @@ const Store = (() => {
       const idx = worksheets.findIndex(w => w.id === worksheetId);
       if (idx >= 0) {
         const ws = worksheets[idx];
-        // If worksheet is locked, only allow status transitions (not item edits)
+        // If worksheet is locked, only allow item edits when transitioning to 'reviewed'
+        // (parents name ad-hoc tasks during review)
         const locked = ['published', 'printed', 'scanned', 'reviewed'].includes(ws.status);
-        if (locked && updates.items) {
+        const isReviewTransition = updates.status === 'reviewed';
+        if (locked && updates.items && !isReviewTransition) {
           throw new Error('This worksheet is locked and its items cannot be edited.');
         }
         Object.assign(ws, updates, { updatedAt: new Date().toISOString() });
@@ -470,12 +472,22 @@ const Store = (() => {
       if (idx < 0) throw new Error('Worksheet not found');
 
       const ws = worksheets[idx];
-      // Merge OCR results into items
+      // Merge OCR results into items (including ad-hoc blank rows)
       if (ocrResults.items) {
         ocrResults.items.forEach(ocrItem => {
-          const wsItem = ws.items[ocrItem.index];
-          if (wsItem) {
-            wsItem.results = ocrItem.results || wsItem.results;
+          if (ocrItem.index < ws.items.length) {
+            ws.items[ocrItem.index].results = ocrItem.results || ws.items[ocrItem.index].results;
+          } else if (ocrItem.isBlank && Object.keys(ocrItem.results || {}).length > 0) {
+            // Ad-hoc row: only add if at least one checkbox was marked
+            const hasAnyCheck = Object.values(ocrItem.results).some(r => r.completed);
+            if (hasAnyCheck) {
+              // Pad items array up to this index
+              while (ws.items.length <= ocrItem.index) {
+                ws.items.push({ text: '', priority: 'B', results: {}, isAdHoc: true });
+              }
+              ws.items[ocrItem.index].results = ocrItem.results;
+              ws.items[ocrItem.index].isAdHoc = true;
+            }
           }
         });
       }
@@ -861,9 +873,10 @@ const Store = (() => {
       const doc = await db.collection('worksheets').doc(worksheetId).get();
       if (!doc.exists) throw new Error('Worksheet not found');
       const ws = doc.data();
-      // If worksheet is locked, only allow status transitions (not item edits)
+      // If worksheet is locked, only allow item edits when transitioning to 'reviewed'
       const locked = ['published', 'printed', 'scanned', 'reviewed'].includes(ws.status);
-      if (locked && updates.items) {
+      const isReviewTransition = updates.status === 'reviewed';
+      if (locked && updates.items && !isReviewTransition) {
         throw new Error('This worksheet is locked and its items cannot be edited.');
       }
       updates.updatedAt = new Date().toISOString();
@@ -968,8 +981,18 @@ const Store = (() => {
       const ws = doc.data();
       if (ocrResults.items) {
         ocrResults.items.forEach(ocrItem => {
-          const wsItem = ws.items[ocrItem.index];
-          if (wsItem) wsItem.results = ocrItem.results || wsItem.results;
+          if (ocrItem.index < ws.items.length) {
+            ws.items[ocrItem.index].results = ocrItem.results || ws.items[ocrItem.index].results;
+          } else if (ocrItem.isBlank && Object.keys(ocrItem.results || {}).length > 0) {
+            const hasAnyCheck = Object.values(ocrItem.results).some(r => r.completed);
+            if (hasAnyCheck) {
+              while (ws.items.length <= ocrItem.index) {
+                ws.items.push({ text: '', priority: 'B', results: {}, isAdHoc: true });
+              }
+              ws.items[ocrItem.index].results = ocrItem.results;
+              ws.items[ocrItem.index].isAdHoc = true;
+            }
+          }
         });
       }
       ws.status = 'scanned';

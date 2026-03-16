@@ -693,10 +693,11 @@ const OCRProcessor = (() => {
 
     const measurements = [];
 
-    // Measure each parent checkbox
-    for (let row = 0; row < items.length; row++) {
-      const item = items[row];
-      const applicableDays = item.daysApplicable || days;
+    // Measure ALL 10 rows (not just defined items) — blank rows may have ad-hoc marks
+    const totalRows = L.TOTAL_ROWS;
+    for (let row = 0; row < totalRows; row++) {
+      const item = row < items.length ? items[row] : null;
+      const applicableDays = item ? (item.daysApplicable || days) : days;
       const rowY = dataStartMmY + row * rowH;
       const midY = rowY + rowH / 2;
 
@@ -751,15 +752,27 @@ const OCRProcessor = (() => {
           mmX: parentCenterMmX, mmY: parentCenterMmY,
         });
 
-        // Also measure child checkbox for informational display
+        // Child checkbox — full detection (same rigor as parent)
         const childCenterMmX = dayX + (halfW - L.CB) / 2 + L.CB / 2;
         const childPx = mapper(childCenterMmX, midY);
         const childCenterBright = avgBrightness(ctx, childPx.x, childPx.y, centerHalfPx, imgW, imgH);
         const childInk = inkDensity(ctx, childPx.x, childPx.y, centerHalfPx, imgW, imgH, 150);
+        const childDiagInk = diagonalInk(ctx, childPx.x, childPx.y, diagHalfPx, imgW, imgH, 150);
+        const childCombinedInk = Math.max(childInk, childDiagInk);
+        const csAbove = avgBrightness(ctx, childPx.x, childPx.y - offset, centerHalfPx, imgW, imgH);
+        const csBelow = avgBrightness(ctx, childPx.x, childPx.y + offset, centerHalfPx, imgW, imgH);
+        const csLeft  = avgBrightness(ctx, childPx.x - offset, childPx.y, centerHalfPx, imgW, imgH);
+        const csRight = avgBrightness(ctx, childPx.x + offset, childPx.y, centerHalfPx, imgW, imgH);
+        const childSurroundBright = (csAbove + csBelow + csLeft + csRight) / 4;
+        const childContrastDrop = childSurroundBright - childCenterBright;
+        const childContrastRatio = Math.max(0, childContrastDrop) / Math.max(childSurroundBright, 1);
         measurements.push({
           row, day: d, type: 'child',
           px: childPx,
-          centerBright: childCenterBright, centerInk: childInk,
+          centerBright: childCenterBright, surroundBright: childSurroundBright,
+          contrastDrop: childContrastDrop, contrastRatio: childContrastRatio,
+          centerInk: childInk, diagInk: childDiagInk, combinedInk: childCombinedInk,
+          mmX: childCenterMmX, mmY: midY,
         });
       }
     }
@@ -770,16 +783,22 @@ const OCRProcessor = (() => {
     // We use a very low fixed threshold to catch even light marks,
     // just above scanner noise floor (~2% ink from paper texture/noise).
     const parentMeasurements = measurements.filter(m => m.type === 'parent');
+    const childMeasurements = measurements.filter(m => m.type === 'child');
 
     // Fixed thresholds — deliberately low to catch any intentional mark
     const INK_THRESHOLD = 0.03;      // 3% ink density = any mark at all
     const CONTRAST_THRESHOLD = 0.02; // 2% contrast = slightly darker than surroundings
 
     // Log all measurements for debugging
-    console.log('[OCR v4] Detection mode: ANY INK = CHECKED');
+    console.log('[OCR v4] Detection mode: ANY INK = CHECKED (parent + child)');
     console.log('[OCR v4] Fixed thresholds: ink >= 3%, contrast >= 2%');
-    console.log('[OCR v4] Per-checkbox measurements:');
+    console.log('[OCR v4] Parent checkbox measurements:');
     parentMeasurements.forEach(m => {
+      const hasInk = m.combinedInk > INK_THRESHOLD || m.contrastRatio > CONTRAST_THRESHOLD;
+      console.log(`  R${m.row}D${m.day}: ${hasInk ? 'CHECKED' : 'empty  '} | contrast=${(m.contrastRatio*100).toFixed(1)}% center=${(m.centerInk*100).toFixed(1)}% diag=${(m.diagInk*100).toFixed(1)}% combined=${(m.combinedInk*100).toFixed(1)}% | bright: center=${m.centerBright.toFixed(0)} surround=${m.surroundBright.toFixed(0)}`);
+    });
+    console.log('[OCR v4] Child checkbox measurements:');
+    childMeasurements.forEach(m => {
       const hasInk = m.combinedInk > INK_THRESHOLD || m.contrastRatio > CONTRAST_THRESHOLD;
       console.log(`  R${m.row}D${m.day}: ${hasInk ? 'CHECKED' : 'empty  '} | contrast=${(m.contrastRatio*100).toFixed(1)}% center=${(m.centerInk*100).toFixed(1)}% diag=${(m.diagInk*100).toFixed(1)}% combined=${(m.combinedInk*100).toFixed(1)}% | bright: center=${m.centerBright.toFixed(0)} surround=${m.surroundBright.toFixed(0)}`);
     });
@@ -788,9 +807,9 @@ const OCRProcessor = (() => {
     const results = [];
     const darknessValues = []; // backward compat
 
-    for (let row = 0; row < items.length; row++) {
-      const item = items[row];
-      const applicableDays = item.daysApplicable || days;
+    for (let row = 0; row < totalRows; row++) {
+      const item = row < items.length ? items[row] : null;
+      const applicableDays = item ? (item.daysApplicable || days) : days;
       const rowResults = {};
 
       for (let d = 0; d < 7; d++) {
@@ -806,17 +825,27 @@ const OCRProcessor = (() => {
         const hasContrast = pm.contrastRatio > CONTRAST_THRESHOLD;
         const parentChecked = hasInk || hasContrast;
 
+        // Child checkbox detection — same logic
+        const childHasInk = cm && cm.combinedInk > INK_THRESHOLD;
+        const childHasContrast = cm && cm.contrastRatio > CONTRAST_THRESHOLD;
+        const childChecked = childHasInk || childHasContrast;
+
         rowResults[dayName] = {
           completed: parentChecked,
           confirmed: parentChecked,
+          childCompleted: childChecked,
           parentDarkness: pm.combinedInk,
-          childDarkness: cm ? cm.centerInk : 0,
+          childDarkness: cm ? cm.combinedInk : 0,
           contrastRatio: pm.contrastRatio,
           centerInk: pm.centerInk,
           diagInk: pm.diagInk,
           combinedInk: pm.combinedInk,
           centerBright: pm.centerBright,
           surroundBright: pm.surroundBright,
+          childContrastRatio: cm ? cm.contrastRatio : 0,
+          childCenterInk: cm ? cm.centerInk : 0,
+          childDiagInk: cm ? cm.diagInk : 0,
+          childCombinedInk: cm ? cm.combinedInk : 0,
         };
 
         // backward compat
@@ -854,15 +883,35 @@ const OCRProcessor = (() => {
           px.y - 2
         );
 
-        // Draw child checkbox marker (dimmer)
+        // Draw child checkbox marker with checked/unchecked coloring
         if (cm) {
-          dbg.strokeStyle = 'rgba(255,165,0,0.5)';
-          dbg.lineWidth = 1;
+          dbg.strokeStyle = childChecked ? '#00ccff' : 'rgba(255,165,0,0.5)';
+          dbg.lineWidth = childChecked ? 2 : 1;
           dbg.strokeRect(cm.px.x - centerHalfPx, cm.px.y - centerHalfPx, centerHalfPx * 2, centerHalfPx * 2);
+          // Crosshair for child
+          dbg.beginPath();
+          dbg.moveTo(cm.px.x - centerHalfPx - 2, cm.px.y);
+          dbg.lineTo(cm.px.x + centerHalfPx + 2, cm.px.y);
+          dbg.moveTo(cm.px.x, cm.px.y - centerHalfPx - 2);
+          dbg.lineTo(cm.px.x, cm.px.y + centerHalfPx + 2);
+          dbg.stroke();
+          // Label
+          dbg.font = `${Math.max(8, Math.round(imgW / 300))}px monospace`;
+          dbg.fillStyle = childChecked ? '#00ccff' : 'rgba(255,165,0,0.5)';
+          dbg.fillText(
+            `c${(cm.contrastRatio * 100).toFixed(0)} i${(cm.centerInk * 100).toFixed(0)} d${(cm.diagInk * 100).toFixed(0)}`,
+            cm.px.x + centerHalfPx + 3,
+            cm.px.y + 10
+          );
         }
       }
 
-      results.push({ index: row, text: item.text, results: rowResults });
+      results.push({
+        index: row,
+        text: item ? item.text : '',
+        isBlank: !item,
+        results: rowResults,
+      });
     }
 
     return {
@@ -961,10 +1010,20 @@ const OCRProcessor = (() => {
         if (onProgress) onProgress(25);
 
         // Step 3: Determine orientation and rotate
-        const rotation = qrResult ? qrResult.rotation : (canvas.height > canvas.width * 1.1 ? 90 : 0);
-        if (rotation !== 0) {
-          canvas = rotateCanvas(canvas, rotation);
+        let appliedRotation = qrResult ? qrResult.rotation : 0;
+        if (appliedRotation !== 0) {
+          canvas = rotateCanvas(canvas, appliedRotation);
         }
+
+        // Force landscape orientation — our form is always landscape letter.
+        // jsQR can read QR codes at any angle (they're rotationally invariant),
+        // so qrResult.rotation may be 0 even when the scan is portrait (rotated 90°).
+        if (canvas.height > canvas.width * 1.1) {
+          console.log('[OCR] Image is portrait, rotating 90° to landscape');
+          canvas = rotateCanvas(canvas, 90);
+          appliedRotation = (appliedRotation + 90) % 360;
+        }
+        const rotation = appliedRotation;
         if (onProgress) onProgress(30);
 
         // Step 3b: Deskew — straighten small rotational skew (up to ±15°)

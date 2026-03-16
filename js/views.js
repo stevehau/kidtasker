@@ -1202,41 +1202,61 @@ const Views = (() => {
       <div class="alert-slot"></div>
 
       <div class="card" style="overflow-x:auto">
-        <table class="data-table" id="results-table">
+        <table class="data-table" id="results-table" style="font-size:0.85rem">
           <thead>
             <tr>
-              <th>#</th>
-              <th>Task</th>
-              ${days.map(d => `<th class="text-center">${d}</th>`).join('')}
+              <th rowspan="2">#</th>
+              <th rowspan="2">Task</th>
+              ${days.map(d => `<th class="text-center" colspan="2" style="border-bottom:none">${d}</th>`).join('')}
+            </tr>
+            <tr>
+              ${days.map(() => `
+                <th class="text-center" style="font-size:0.7rem;font-weight:normal;color:#666;padding:2px 4px">Child</th>
+                <th class="text-center" style="font-size:0.7rem;font-weight:normal;color:#666;padding:2px 4px;border-left:1px solid #eee">Parent</th>
+              `).join('')}
             </tr>
           </thead>
           <tbody>
-            ${ws.items.map((item, idx) => html`
-              <tr>
-                <td>${idx + 1}</td>
-                <td>${item.text}</td>
+            ${ws.items.map((item, idx) => {
+              const isAdHoc = item.isAdHoc;
+              const taskCell = isAdHoc
+                ? `<td><input type="text" class="adhoc-task-name" data-item="${idx}" placeholder="Enter task name..." value="${item.text || ''}" style="width:100%;border:1px solid #ffc107;border-radius:4px;padding:4px 8px;background:#fffbe6;font-size:0.85rem"></td>`
+                : `<td>${item.text}</td>`;
+              return html`
+              <tr style="${isAdHoc ? 'background:#fffef5' : ''}">
+                <td>${idx + 1}${isAdHoc ? ' <span style="color:#e67e00;font-size:0.7rem;font-weight:600" title="Ad-hoc task detected by OCR">★</span>' : ''}</td>
+                ${taskCell}
                 ${days.map(d => {
                   const dayResult = item.results && item.results[d];
-                  const checked = dayResult && dayResult.completed;
+                  const parentChecked = dayResult && dayResult.completed;
+                  const childChecked = dayResult && dayResult.childCompleted;
                   const applicable = !item.daysApplicable || item.daysApplicable.includes(d);
                   if (!applicable) {
-                    return `<td class="text-center" style="background:#f0f0f0">N/A</td>`;
+                    return `<td class="text-center" style="background:#f0f0f0;padding:2px">-</td><td class="text-center" style="background:#f0f0f0;padding:2px;border-left:1px solid #eee">-</td>`;
                   }
-                  return `<td class="text-center">
-                    <input type="checkbox" class="result-check" data-item="${idx}" data-day="${d}" ${checked ? 'checked' : ''}>
+                  return `<td class="text-center" style="padding:2px">
+                    <input type="checkbox" class="result-check-child" data-item="${idx}" data-day="${d}" ${childChecked ? 'checked' : ''}>
+                  </td>
+                  <td class="text-center" style="padding:2px;border-left:1px solid #eee">
+                    <input type="checkbox" class="result-check" data-item="${idx}" data-day="${d}" ${parentChecked ? 'checked' : ''}>
                   </td>`;
                 }).join('')}
               </tr>
-            `).join('')}
+            `}).join('')}
           </tbody>
         </table>
       </div>
 
+      ${ws.items.some(i => i.isAdHoc) ? `
+      <div class="alert alert-info" style="background:#fff8e1;border-left:4px solid #ffc107;padding:12px 16px;margin-bottom:16px;border-radius:4px">
+        <strong>Ad-hoc tasks detected</strong> &mdash; Rows marked with a star were not pre-printed but had checkbox marks. Please name these tasks above. They can be prepopulated on future worksheets.
+      </div>` : ''}
+
       <div class="card">
         <div class="card-title">Quick Actions</div>
         <div class="flex gap-1 flex-wrap">
-          <button class="btn btn-outline btn-sm" id="btn-check-all">Check All</button>
-          <button class="btn btn-outline btn-sm" id="btn-uncheck-all">Uncheck All</button>
+          <button class="btn btn-outline btn-sm" id="btn-check-all">Check All (Parent)</button>
+          <button class="btn btn-outline btn-sm" id="btn-uncheck-all">Uncheck All (Parent)</button>
         </div>
       </div>
     `;
@@ -1248,22 +1268,42 @@ const Views = (() => {
     $('#btn-uncheck-all').addEventListener('click', () => {
       document.querySelectorAll('.result-check').forEach(cb => cb.checked = false);
     });
-    // Save results
+    // Save results (including ad-hoc rows with task names, child + parent)
     $('#btn-save-results').addEventListener('click', async () => {
       const items = ws.items.map((item, idx) => {
         const results = {};
         days.forEach(d => {
-          const cb = document.querySelector(`.result-check[data-item="${idx}"][data-day="${d}"]`);
-          if (cb) {
-            results[d] = { completed: cb.checked, confirmed: cb.checked };
+          const parentCb = document.querySelector(`.result-check[data-item="${idx}"][data-day="${d}"]`);
+          const childCb = document.querySelector(`.result-check-child[data-item="${idx}"][data-day="${d}"]`);
+          if (parentCb) {
+            // Preserve existing OCR metadata, overlay manual edits
+            const existing = (item.results && item.results[d]) || {};
+            results[d] = {
+              ...existing,
+              completed: parentCb.checked,
+              confirmed: parentCb.checked,
+              childCompleted: childCb ? childCb.checked : (existing.childCompleted || false),
+            };
           }
         });
-        return { index: idx, text: item.text, results };
+        // Pick up edited ad-hoc task name
+        const nameInput = document.querySelector(`.adhoc-task-name[data-item="${idx}"]`);
+        const text = nameInput ? nameInput.value.trim() : item.text;
+        return { index: idx, text, results, isBlank: item.isAdHoc && !text };
+      });
+
+      // Persist ad-hoc task names back to the worksheet items
+      const updatedItems = ws.items.map((item, idx) => {
+        const nameInput = document.querySelector(`.adhoc-task-name[data-item="${idx}"]`);
+        if (nameInput) {
+          return { ...item, text: nameInput.value.trim() };
+        }
+        return item;
       });
 
       try {
         await Store.saveOCRResults(ws.id, { items }, Store.getCurrentUser().displayName);
-        await Store.updateWorksheet(ws.id, { status: 'reviewed' });
+        await Store.updateWorksheet(ws.id, { status: 'reviewed', items: updatedItems });
         showAlert($main(), 'Results saved successfully!', 'success');
       } catch (err) {
         showAlert($main(), err.message);
@@ -1950,6 +1990,7 @@ const Views = (() => {
                 <div class="child-actions">
                   <a href="#/checklist/${child.id}" class="btn btn-sm btn-primary">Checklist</a>
                   <button class="btn btn-sm btn-outline btn-edit-child" data-id="${child.id}" data-name="${child.name}" data-age="${Store.getChildAge(child)}" data-birthday="${child.birthday || ''}">Edit</button>
+                  <button class="btn btn-sm btn-outline btn-download-data" data-id="${child.id}" title="Download all data as CSV">Download Data</button>
                   <button class="btn btn-sm btn-danger btn-delete-child" data-id="${child.id}" data-name="${child.name}">Remove</button>
                 </div>
               </div>
@@ -2184,6 +2225,122 @@ const Views = (() => {
           await Store.deleteChild(btn.dataset.id);
           renderSettings(family);
         }
+      });
+    });
+
+    // Download Data CSV per child
+    document.querySelectorAll('.btn-download-data').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        btn.disabled = true;
+        btn.textContent = 'Generating...';
+        try {
+          const childId = btn.dataset.id;
+          const worksheets = await Store.getChildWorksheets(childId);
+          // Only include reviewed/scanned worksheets with results
+          const scored = worksheets
+            .filter(w => w.status === 'scanned' || w.status === 'reviewed')
+            .sort((a, b) => (a.weekStartDate || '').localeCompare(b.weekStartDate || ''));
+
+          if (scored.length === 0) {
+            showAlert($main(), 'No scored worksheets found for this child.', 'info');
+            btn.disabled = false;
+            btn.textContent = 'Download Data';
+            return;
+          }
+
+          // Collect all unique tasks grouped by category
+          const taskMap = new Map(); // key = taskText, value = { category, taskText }
+          scored.forEach(ws => {
+            (ws.items || []).forEach(item => {
+              if (item.text && !taskMap.has(item.text)) {
+                taskMap.set(item.text, { category: item.category || 'Other', text: item.text });
+              }
+            });
+          });
+
+          // Sort tasks: group by category, then alphabetically within category
+          const tasks = Array.from(taskMap.values()).sort((a, b) => {
+            if (a.category !== b.category) return a.category.localeCompare(b.category);
+            return a.text.localeCompare(b.text);
+          });
+
+          // Build date columns — each worksheet week generates 7 date columns, each with child + parent sub-columns
+          const days = APP_CONFIG.daysShort;
+          const dateColumns = []; // { date: string, wsId, day }
+          scored.forEach(ws => {
+            const startDate = new Date(ws.weekStartDate + 'T00:00:00');
+            days.forEach((d, di) => {
+              const colDate = new Date(startDate);
+              colDate.setDate(startDate.getDate() + di);
+              const dateStr = `${colDate.getMonth() + 1}/${colDate.getDate()}/${colDate.getFullYear()}`;
+              dateColumns.push({ date: dateStr, wsId: ws.id, day: d, ws });
+            });
+          });
+
+          // Build CSV rows
+          const csvRows = [];
+
+          // Row 1: empty, empty, then date repeated twice per column (child + parent)
+          const row1 = ['Category', 'Task'];
+          dateColumns.forEach(col => {
+            row1.push(col.date, '');
+          });
+          csvRows.push(row1);
+
+          // Row 2: empty, empty, then alternating Child Report / Parent Report
+          const row2 = ['', ''];
+          dateColumns.forEach(() => {
+            row2.push('Child Report', 'Parent Report');
+          });
+          csvRows.push(row2);
+
+          // Data rows: one per task
+          tasks.forEach(task => {
+            const row = [task.category, task.text];
+            dateColumns.forEach(col => {
+              const ws = col.ws;
+              const item = (ws.items || []).find(i => i.text === task.text);
+              const dayResult = item && item.results && item.results[col.day];
+              const childVal = dayResult && dayResult.childCompleted ? 1 : 0;
+              const parentVal = dayResult && dayResult.completed ? 1 : 0;
+              // Only output values if this task existed in this worksheet
+              if (item) {
+                row.push(childVal, parentVal);
+              } else {
+                row.push('', '');
+              }
+            });
+            csvRows.push(row);
+          });
+
+          // Convert to CSV string
+          const csvContent = csvRows.map(row =>
+            row.map(cell => {
+              const s = String(cell);
+              return s.includes(',') || s.includes('"') || s.includes('\n')
+                ? '"' + s.replace(/"/g, '""') + '"'
+                : s;
+            }).join(',')
+          ).join('\n');
+
+          // Trigger download
+          const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = `kidtasker-data-${new Date().toISOString().split('T')[0]}.csv`;
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          URL.revokeObjectURL(url);
+
+          showAlert($main(), 'CSV downloaded successfully.', 'success');
+        } catch (err) {
+          console.error('CSV download error:', err);
+          showAlert($main(), 'Failed to generate CSV: ' + err.message);
+        }
+        btn.disabled = false;
+        btn.textContent = 'Download Data';
       });
     });
 
