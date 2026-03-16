@@ -620,7 +620,7 @@ const PDFGenerator = (() => {
       });
 
       for (let b = 0; b < blankRows; b++) {
-        drawItemRow(doc, items.length + b + 1, '', 'B', null, y, true, rowH);
+        drawItemRow(doc, items.length + b + 1, '', null, null, y, true, rowH);
         y += rowH;
       }
 

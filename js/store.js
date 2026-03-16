@@ -191,10 +191,18 @@ const Store = (() => {
       children.push(child);
       this._saveCollection('children', children);
 
-      // Auto-populate default tasks
-      if (APP_CONFIG.defaultTasks && APP_CONFIG.defaultTasks.length > 0) {
+      // Auto-populate age-appropriate default tasks
+      const childAge = child.age || 8;
+      const ageGroups = APP_CONFIG.defaultTasksByAge;
+      let tasksForAge = APP_CONFIG.defaultTasks; // fallback
+      if (ageGroups) {
+        if (childAge <= ageGroups.young.maxAge) tasksForAge = ageGroups.young.tasks;
+        else if (childAge <= ageGroups.middle.maxAge) tasksForAge = ageGroups.middle.tasks;
+        else tasksForAge = ageGroups.teen.tasks;
+      }
+      if (tasksForAge && tasksForAge.length > 0) {
         const templates = this._getCollection('taskTemplates');
-        for (const dt of APP_CONFIG.defaultTasks) {
+        for (const dt of tasksForAge) {
           templates.push({
             id: generateId(),
             familyId,
@@ -745,10 +753,18 @@ const Store = (() => {
       const ref = await db.collection('children').add(data);
       const child = { id: ref.id, ...data };
 
-      // Auto-populate default tasks
-      if (APP_CONFIG.defaultTasks && APP_CONFIG.defaultTasks.length > 0) {
+      // Auto-populate age-appropriate default tasks
+      const childAge = child.age || 8;
+      const ageGroups = APP_CONFIG.defaultTasksByAge;
+      let tasksForAge = APP_CONFIG.defaultTasks;
+      if (ageGroups) {
+        if (childAge <= ageGroups.young.maxAge) tasksForAge = ageGroups.young.tasks;
+        else if (childAge <= ageGroups.middle.maxAge) tasksForAge = ageGroups.middle.tasks;
+        else tasksForAge = ageGroups.teen.tasks;
+      }
+      if (tasksForAge && tasksForAge.length > 0) {
         const batch = db.batch();
-        for (const dt of APP_CONFIG.defaultTasks) {
+        for (const dt of tasksForAge) {
           const taskRef = db.collection('taskTemplates').doc();
           batch.set(taskRef, {
             familyId,
