@@ -250,38 +250,40 @@ const OCRProcessor = (() => {
     return { canvas: corrected, angle: skewAngle };
   }
 
-  // ---- Registration Mark Detection ----
+  // ---- Registration Mark Detection (v2 — targeted search) ----
 
-  // Scan a region of the image for an L-shaped corner mark
-  // Returns the precise pixel coordinate of the mark's corner point
-  function findLMark(ctx, searchX, searchY, searchW, searchH, imgW, imgH, cornerType) {
-    // cornerType: 'TL' (top-left), 'TR', 'BL', 'BR'
-    // Extract the search region
-    const x0 = Math.max(0, Math.round(searchX));
-    const y0 = Math.max(0, Math.round(searchY));
-    const w = Math.min(Math.round(searchW), imgW - x0);
-    const h = Math.min(Math.round(searchH), imgH - y0);
-    if (w <= 0 || h <= 0) return null;
+  // Search for an L-shaped corner mark near an EXPECTED pixel position.
+  // v1 scanned the entire 20% corner quadrant and picked the densest dark cluster,
+  // which often landed on the QR code or text content instead of the thin L-mark.
+  // v2 uses the known form geometry to estimate where each mark should be, then
+  // searches a focused area around that estimate, with a mark-sized window.
+  function findLMark(ctx, expectedPx, searchRadius, imgW, imgH, cornerType, markSizePx) {
+    const x0 = Math.max(0, Math.round(expectedPx.x - searchRadius));
+    const y0 = Math.max(0, Math.round(expectedPx.y - searchRadius));
+    const x1 = Math.min(imgW, Math.round(expectedPx.x + searchRadius));
+    const y1 = Math.min(imgH, Math.round(expectedPx.y + searchRadius));
+    const w = x1 - x0;
+    const h = y1 - y0;
+    if (w <= 4 || h <= 4) return null;
 
     const imageData = ctx.getImageData(x0, y0, w, h);
     const data = imageData.data;
 
-    // Create binary dark pixel map
+    // Binary dark pixel map — threshold 130 for robustness with scanned docs
     const dark = new Uint8Array(w * h);
     for (let i = 0; i < w * h; i++) {
       const r = data[i * 4], g = data[i * 4 + 1], b = data[i * 4 + 2];
-      dark[i] = ((r + g + b) / 3 < 100) ? 1 : 0;
+      dark[i] = ((r + g + b) / 3 < 130) ? 1 : 0;
     }
 
-    // Scan for the densest cluster of dark pixels in a sliding window
-    // The L-mark arm is about REG_MARK_SIZE mm ~ some pixels
-    const markPxApprox = Math.round(w * 0.25); // approximate mark size in pixels
-    const winSize = Math.max(4, Math.round(markPxApprox));
-    let bestScore = 0, bestX = 0, bestY = 0;
+    // Sliding window sized to the ACTUAL mark (not 25% of search region!)
+    // The L-mark is ~5mm with 1.2mm thick arms — its bounding box is markSizePx square
+    const winSize = Math.max(6, Math.round(markSizePx * 1.3));
+    const step = Math.max(1, Math.round(winSize / 5));
 
-    const stepSize = Math.max(1, Math.round(winSize / 4));
-    for (let sy = 0; sy < h - winSize; sy += stepSize) {
-      for (let sx = 0; sx < w - winSize; sx += stepSize) {
+    let bestScore = 0, bestX = 0, bestY = 0;
+    for (let sy = 0; sy <= h - winSize; sy += step) {
+      for (let sx = 0; sx <= w - winSize; sx += step) {
         let score = 0;
         for (let dy = 0; dy < winSize; dy++) {
           for (let dx = 0; dx < winSize; dx++) {
@@ -296,25 +298,19 @@ const OCRProcessor = (() => {
       }
     }
 
-    // Minimum threshold: at least 5% of the window should be dark
-    if (bestScore < winSize * winSize * 0.05) return null;
+    // Minimum threshold: at least 4% of window should be dark
+    if (bestScore < winSize * winSize * 0.04) return null;
 
-    // Refine: find exact corner of the L-mark
-    // For TL mark, the corner is at the top-left of the dark cluster
-    // For TR mark, the corner is at the top-right, etc.
-    let cornerX, cornerY;
+    // Refine: find bounding box of dark pixels near the best cluster
+    const pad = Math.round(winSize * 0.3);
+    const rx0 = Math.max(0, bestX - pad);
+    const ry0 = Math.max(0, bestY - pad);
+    const rx1 = Math.min(w, bestX + winSize + pad);
+    const ry1 = Math.min(h, bestY + winSize + pad);
 
-    // Scan the found region more precisely
-    const regionSize = winSize * 2;
-    const rx0 = Math.max(0, bestX - winSize / 2);
-    const ry0 = Math.max(0, bestY - winSize / 2);
-    const rx1 = Math.min(w, bestX + regionSize);
-    const ry1 = Math.min(h, bestY + regionSize);
-
-    // Find the bounding box of dark pixels in this region
     let minDX = rx1, minDY = ry1, maxDX = rx0, maxDY = ry0;
-    for (let dy = Math.round(ry0); dy < Math.round(ry1); dy++) {
-      for (let dx = Math.round(rx0); dx < Math.round(rx1); dx++) {
+    for (let dy = ry0; dy < ry1; dy++) {
+      for (let dx = rx0; dx < rx1; dx++) {
         if (dark[dy * w + dx]) {
           minDX = Math.min(minDX, dx);
           minDY = Math.min(minDY, dy);
@@ -324,7 +320,8 @@ const OCRProcessor = (() => {
       }
     }
 
-    // The corner point depends on which corner we're looking for
+    // The corner point depends on which corner we're detecting
+    let cornerX, cornerY;
     switch (cornerType) {
       case 'TL': cornerX = minDX; cornerY = minDY; break;
       case 'TR': cornerX = maxDX; cornerY = minDY; break;
@@ -332,25 +329,55 @@ const OCRProcessor = (() => {
       case 'BR': cornerX = maxDX; cornerY = maxDY; break;
     }
 
-    return { x: x0 + cornerX, y: y0 + cornerY };
+    return {
+      x: x0 + cornerX,
+      y: y0 + cornerY,
+      bbox: { x: x0 + minDX, y: y0 + minDY, w: maxDX - minDX, h: maxDY - minDY }
+    };
   }
 
-  // Find all 4 registration marks in the image
+  // Find all 4 registration marks using targeted search around expected positions
   function findRegistrationMarks(ctx, imgW, imgH) {
-    // Search in corner regions (20% of each dimension)
-    const searchFrac = 0.20;
-    const sw = Math.round(imgW * searchFrac);
-    const sh = Math.round(imgH * searchFrac);
+    const L = PDFGenerator.layout;
+    const scaleX = imgW / L.PAGE_W;
+    const scaleY = imgH / L.PAGE_H;
 
-    const tl = findLMark(ctx, 0, 0, sw, sh, imgW, imgH, 'TL');
-    const tr = findLMark(ctx, imgW - sw, 0, sw, sh, imgW, imgH, 'TR');
-    const bl = findLMark(ctx, 0, imgH - sh, sw, sh, imgW, imgH, 'BL');
-    const br = findLMark(ctx, imgW - sw, imgH - sh, sw, sh, imgW, imgH, 'BR');
+    // Physical corner points of each L-mark in mm
+    // These are the OUTER corners of the L-shapes (matching the dst points in the mapper)
+    // TL: top-left of bounding box = (REG_INSET, REG_INSET)
+    // TR: top-right of bounding box = (topRight.x + MARK_SIZE, REG_INSET)
+    // BL: bottom-left = (REG_INSET, bottomLeft.y + MARK_SIZE)
+    // BR: bottom-right = (bottomRight.x + MARK_SIZE, bottomRight.y + MARK_SIZE)
+    const dstCornersMm = {
+      tl: { x: L.REG_MARKS.topLeft.x, y: L.REG_MARKS.topLeft.y },
+      tr: { x: L.REG_MARKS.topRight.x + L.REG_MARK_SIZE, y: L.REG_MARKS.topRight.y },
+      bl: { x: L.REG_MARKS.bottomLeft.x, y: L.REG_MARKS.bottomLeft.y + L.REG_MARK_SIZE },
+      br: { x: L.REG_MARKS.bottomRight.x + L.REG_MARK_SIZE, y: L.REG_MARKS.bottomRight.y + L.REG_MARK_SIZE },
+    };
+
+    // Estimated pixel positions (may be off due to print scaling/margins)
+    const expected = {};
+    for (const k of ['tl', 'tr', 'bl', 'br']) {
+      expected[k] = { x: Math.round(dstCornersMm[k].x * scaleX), y: Math.round(dstCornersMm[k].y * scaleY) };
+    }
+
+    // Mark size in pixels
+    const markSizePx = Math.round(L.REG_MARK_SIZE * Math.min(scaleX, scaleY));
+    // Search radius: 6% of image max dimension — covers up to ~10% print scaling
+    const searchRadius = Math.round(Math.max(imgW, imgH) * 0.06);
+
+    console.log(`[OCR v5] Expected mark positions (px):`, expected);
+    console.log(`[OCR v5] Mark size: ${markSizePx}px, search radius: ${searchRadius}px`);
+
+    const tl = findLMark(ctx, expected.tl, searchRadius, imgW, imgH, 'TL', markSizePx);
+    const tr = findLMark(ctx, expected.tr, searchRadius, imgW, imgH, 'TR', markSizePx);
+    const bl = findLMark(ctx, expected.bl, searchRadius, imgW, imgH, 'BL', markSizePx);
+    const br = findLMark(ctx, expected.br, searchRadius, imgW, imgH, 'BR', markSizePx);
 
     const found = [tl, tr, bl, br].filter(m => m !== null).length;
-    console.log(`[OCR] Registration marks found: ${found}/4`, { tl, tr, bl, br });
+    console.log(`[OCR v5] Registration marks found: ${found}/4`, { tl, tr, bl, br });
 
-    return { tl, tr, bl, br, count: found };
+    return { tl, tr, bl, br, count: found, expected, dstCornersMm };
   }
 
   // ---- Perspective Transform ----
@@ -446,8 +473,7 @@ const OCRProcessor = (() => {
             const py = sy + dy;
             if (px < 0 || px >= imgW || py < 0 || py >= imgH) continue;
             const pixel = ctx.getImageData(px, py, 1, 1).data;
-            const brightness = (pixel[0] + pixel[1] + pixel[2]) / 3;
-            if (brightness < darkThresh) darkCount++;
+            if (isHandwrittenInk(pixel[0], pixel[1], pixel[2], darkThresh)) darkCount++;
             totalCount++;
           }
         }
@@ -459,7 +485,19 @@ const OCRProcessor = (() => {
     return maxInk;
   }
 
-  // Count ink-density: fraction of pixels darker than a given brightness threshold
+  // Check if a pixel is handwritten ink (not a printed blue checkbox border)
+  // Blue borders have high blue channel relative to red/green
+  function isHandwrittenInk(r, g, b, darkThresh) {
+    const brightness = (r + g + b) / 3;
+    if (brightness >= darkThresh) return false; // too light
+    // Exclude printed blue pixels (checkbox borders): high blue, low red
+    if (b > 150 && b > r * 1.3 && b > g * 1.1) return false;
+    // Exclude printed light blue/purple UI elements
+    if (b > 120 && b > r * 1.2 && brightness > 100) return false;
+    return true; // dark, non-blue = likely pen/pencil ink
+  }
+
+  // Count ink-density: fraction of pixels that are handwritten ink (not blue borders)
   function inkDensity(ctx, cx, cy, halfSize, imgW, imgH, darkThresh) {
     const r = Math.max(1, Math.round(halfSize));
     const x0 = Math.max(0, cx - r);
@@ -475,7 +513,7 @@ const OCRProcessor = (() => {
       let darkCount = 0;
       const total = w * h;
       for (let i = 0; i < data.length; i += 4) {
-        if ((data[i] + data[i + 1] + data[i + 2]) / 3 < darkThresh) darkCount++;
+        if (isHandwrittenInk(data[i], data[i + 1], data[i + 2], darkThresh)) darkCount++;
       }
       return darkCount / total;
     } catch (e) { return 0; }
@@ -489,7 +527,7 @@ const OCRProcessor = (() => {
   //   3. Use contrast ratio (surround brightness - center brightness) for detection
   //   4. Build debug overlay showing exactly where we're sampling
 
-  function analyzeCheckboxes(ctx, imgW, imgH, worksheet, mapper) {
+  function analyzeCheckboxes(ctx, imgW, imgH, worksheet, mapper, regMarks) {
     const L = PDFGenerator.layout;
     const items = worksheet.items || [];
     const days = APP_CONFIG.daysShort;
@@ -528,9 +566,9 @@ const OCRProcessor = (() => {
     }
 
     // Compute pixel sizes for sampling regions
-    // Parent checkbox is CB_P mm (3.4mm). We sample the center 40% — catches handwritten strokes
+    // Parent checkbox is CB_P mm (4.5mm). We sample the center 50% — catches handwritten strokes
     // that don't pass through exact center, while still avoiding borders
-    const centerSizeMm = L.CB_P * 0.40;
+    const centerSizeMm = L.CB_P * 0.50;
     const surroundSizeMm = L.CB_P * 0.8; // slightly larger than the checkbox for surround
     const p1 = mapper(0, 0);
     const p2 = mapper(centerSizeMm, 0);
@@ -550,9 +588,106 @@ const OCRProcessor = (() => {
     const dbg = debugCanvas.getContext('2d');
     dbg.drawImage(ctx.canvas, 0, 0);
 
-    // Draw registration mark positions on debug overlay
-    dbg.strokeStyle = '#00ff00';
-    dbg.lineWidth = 3;
+    // ---- Draw registration marks + QR code on debug overlay ----
+    const debugFontSize = Math.max(12, Math.round(imgW / 200));
+    const debugFontSmall = Math.max(10, Math.round(imgW / 250));
+
+    if (regMarks) {
+      // Draw DETECTED mark positions (green circles + bounding boxes)
+      for (const key of ['tl', 'tr', 'bl', 'br']) {
+        const mark = regMarks[key];
+        if (mark) {
+          dbg.strokeStyle = '#00ff00';
+          dbg.lineWidth = 3;
+          dbg.beginPath();
+          dbg.arc(mark.x, mark.y, 15, 0, Math.PI * 2);
+          dbg.stroke();
+          dbg.fillStyle = '#00ff00';
+          dbg.font = `bold ${debugFontSize}px monospace`;
+          dbg.fillText(`${key.toUpperCase()} det`, mark.x + 20, mark.y + 5);
+          if (mark.bbox) {
+            dbg.strokeStyle = 'rgba(0,255,0,0.5)';
+            dbg.lineWidth = 1;
+            dbg.strokeRect(mark.bbox.x, mark.bbox.y, mark.bbox.w, mark.bbox.h);
+          }
+        }
+      }
+      // Draw EXPECTED mark positions (yellow circles + lines to detected)
+      if (regMarks.expected) {
+        for (const key of ['tl', 'tr', 'bl', 'br']) {
+          const pos = regMarks.expected[key];
+          if (!pos) continue;
+          dbg.strokeStyle = '#ffff00';
+          dbg.lineWidth = 2;
+          dbg.beginPath();
+          dbg.arc(pos.x, pos.y, 12, 0, Math.PI * 2);
+          dbg.stroke();
+          dbg.fillStyle = '#ffff00';
+          dbg.font = `${debugFontSmall}px monospace`;
+          dbg.fillText(`${key.toUpperCase()} exp`, pos.x + 20, pos.y - 8);
+          // Line from expected to detected
+          const det = regMarks[key];
+          if (det) {
+            dbg.strokeStyle = 'rgba(255,255,0,0.4)';
+            dbg.lineWidth = 1;
+            dbg.setLineDash([4, 4]);
+            dbg.beginPath();
+            dbg.moveTo(pos.x, pos.y);
+            dbg.lineTo(det.x, det.y);
+            dbg.stroke();
+            dbg.setLineDash([]);
+            // Show pixel offset
+            const dx = det.x - pos.x, dy = det.y - pos.y;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+            dbg.fillStyle = '#ffff00';
+            dbg.font = `${debugFontSmall}px monospace`;
+            dbg.fillText(`Δ${dist.toFixed(0)}px`, (pos.x + det.x) / 2 + 5, (pos.y + det.y) / 2 - 5);
+          }
+        }
+      }
+    }
+
+    // Draw QR code expected position on debug overlay
+    if (mapper) {
+      const qrSizeMm = 13;
+      const qrXMm = L.MARGIN + L.CONTENT_W - qrSizeMm - 1;
+      const qrYMm = L.MARGIN + 9 + 0.5 + 9 + 0.5; // title bar + info strip
+      const qrTL = mapper(qrXMm, qrYMm);
+      const qrBR = mapper(qrXMm + qrSizeMm, qrYMm + qrSizeMm);
+      dbg.strokeStyle = '#00ffff';
+      dbg.lineWidth = 2;
+      dbg.strokeRect(qrTL.x, qrTL.y, qrBR.x - qrTL.x, qrBR.y - qrTL.y);
+      dbg.fillStyle = '#00ffff';
+      dbg.font = `bold ${debugFontSmall}px monospace`;
+      dbg.fillText('QR', qrTL.x + 3, qrTL.y - 5);
+    }
+
+    // Draw table column grid on debug overlay for visual alignment verification
+    if (mapper) {
+      dbg.strokeStyle = 'rgba(255,0,255,0.15)';
+      dbg.lineWidth = 1;
+      for (let d = 0; d <= 7; d++) {
+        const colX = L.MARGIN + L.COL.dayStart + d * L.COL.dayW;
+        const top = mapper(colX, L.MARGIN);
+        const bot = mapper(colX, L.PAGE_H - L.MARGIN);
+        dbg.beginPath();
+        dbg.moveTo(top.x, top.y);
+        dbg.lineTo(bot.x, bot.y);
+        dbg.stroke();
+        // Day column midlines (child|parent separator)
+        if (d < 7) {
+          const midX = colX + L.COL.dayW / 2;
+          const midTop = mapper(midX, L.MARGIN);
+          const midBot = mapper(midX, L.PAGE_H - L.MARGIN);
+          dbg.strokeStyle = 'rgba(255,0,255,0.08)';
+          dbg.beginPath();
+          dbg.moveTo(midTop.x, midTop.y);
+          dbg.lineTo(midBot.x, midBot.y);
+          dbg.stroke();
+          dbg.strokeStyle = 'rgba(255,0,255,0.15)';
+        }
+      }
+    }
 
     const measurements = [];
 
@@ -868,7 +1003,7 @@ const OCRProcessor = (() => {
 
           if (marks.tl && marks.tr && marks.bl && marks.br) {
             const srcPoints = { tl: marks.tl, tr: marks.tr, bl: marks.bl, br: marks.br };
-            const dstPoints = {
+            const dstPoints = regMarks.dstCornersMm || {
               tl: { x: L.REG_MARKS.topLeft.x, y: L.REG_MARKS.topLeft.y },
               tr: { x: L.REG_MARKS.topRight.x + L.REG_MARK_SIZE, y: L.REG_MARKS.topRight.y },
               bl: { x: L.REG_MARKS.bottomLeft.x, y: L.REG_MARKS.bottomLeft.y + L.REG_MARK_SIZE },
@@ -889,7 +1024,7 @@ const OCRProcessor = (() => {
         let checkboxResults = null;
         if (worksheet && worksheet.items && worksheet.items.length > 0) {
           if (onProgress) onProgress(70);
-          checkboxResults = analyzeCheckboxes(ctx, imgW, imgH, worksheet, mapper);
+          checkboxResults = analyzeCheckboxes(ctx, imgW, imgH, worksheet, mapper, regMarks);
           if (onProgress) onProgress(90);
         }
 

@@ -10,8 +10,8 @@ const PDFGenerator = (() => {
   const PAGE_W = 279.4;
   const PAGE_H = 215.9;
   const CONTENT_W = PAGE_W - 2 * MARGIN;
-  const CB = 3.8; // checkbox size (larger for visibility)
-  const CB_P = 3.4; // parent OK checkbox (slightly smaller, blue)
+  const CB = 5.0; // checkbox size (increased from 3.8 for easier marking and OCR detection)
+  const CB_P = 4.5; // parent OK checkbox (increased from 3.4 for better OCR accuracy)
   const TOTAL_ROWS = 10; // always print exactly 10 rows
   const BLUE = [74, 108, 247];
   const GOLD = [243, 156, 18];
