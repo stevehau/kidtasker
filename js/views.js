@@ -1661,11 +1661,21 @@ const Views = (() => {
       </div>
     `;
 
-    // Set default date range (last 3 months)
+    // Set default date range: most recent of (earliest data OR 1 year ago)
     const now = new Date();
-    const threeMonthsAgo = new Date(now);
-    threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 3);
-    $('#analytics-from').value = Store.formatDate(threeMonthsAgo);
+    const oneYearAgo = new Date(now);
+    oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
+    // Fetch all scored worksheets to find earliest data point
+    let allScored = [];
+    try {
+      allScored = await Store.getAnalyticsData(family.id, null, null, null);
+    } catch (e) {}
+    let fromDate = oneYearAgo;
+    if (allScored.length > 0) {
+      const earliest = new Date(allScored[0].weekStartDate + 'T00:00:00');
+      fromDate = earliest > oneYearAgo ? earliest : oneYearAgo;
+    }
+    $('#analytics-from').value = Store.formatDate(fromDate);
     $('#analytics-to').value = Store.formatDate(now);
 
     async function loadAnalytics() {
@@ -1727,21 +1737,21 @@ const Views = (() => {
       </div>
 
       <div class="card">
-        <div class="card-title">Completion by Category <span style="font-size:0.75rem;font-weight:normal;color:#888">(Parent Reported)</span></div>
+        <div class="card-title">Completion by Category <span style="font-size:0.75rem;font-weight:normal;color:#888">(Parent Reported Only)</span></div>
         <div class="chart-container">
           <canvas id="chart-categories"></canvas>
         </div>
       </div>
 
       <div class="card">
-        <div class="card-title">Completion by Day of Week <span style="font-size:0.75rem;font-weight:normal;color:#888">(Parent Reported)</span></div>
+        <div class="card-title">Completion by Day of Week <span style="font-size:0.75rem;font-weight:normal;color:#888">(Parent Reported Only)</span></div>
         <div class="chart-container">
           <canvas id="chart-days"></canvas>
         </div>
       </div>
 
       <div class="card">
-        <div class="card-title">Detailed Breakdown by Category <span style="font-size:0.75rem;font-weight:normal;color:#888">(Parent Reported)</span></div>
+        <div class="card-title">Detailed Breakdown by Category <span style="font-size:0.75rem;font-weight:normal;color:#888">(Parent Reported Only)</span></div>
         <table class="data-table">
           <thead>
             <tr>
