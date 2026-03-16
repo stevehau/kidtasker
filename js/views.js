@@ -1440,13 +1440,14 @@ const Views = (() => {
     const resultsArea = $('#ocr-results-area');
 
     if (worksheet) {
-      // Check submission date validation
+      // Check submission date validation (bypassed in debug mode)
+      const isDebugMode = localStorage.getItem('fc_debug_mode') === '1';
       const now = new Date();
       const weekStartDate = new Date(worksheet.weekStartDate);
       const lastDayOfWeek = new Date(weekStartDate);
       lastDayOfWeek.setDate(lastDayOfWeek.getDate() + 6);
 
-      if (now < lastDayOfWeek) {
+      if (now < lastDayOfWeek && !isDebugMode) {
         $('#ocr-progress-area').classList.add('hidden');
         resultsArea.classList.remove('hidden');
         const lastDayStr = lastDayOfWeek.toLocaleDateString();
@@ -2108,6 +2109,13 @@ const Views = (() => {
       <div class="card" style="border:1px dashed #e74c3c">
         <div class="card-title" style="color:#e74c3c">Developer Tools</div>
         <p class="text-muted mb-2" style="font-size:0.85rem">Only visible to stevehau@stevehau.com</p>
+        <div class="form-group" style="margin-bottom:12px">
+          <label style="display:flex;align-items:center;cursor:pointer;gap:8px">
+            <input type="checkbox" id="chk-debug-mode" ${localStorage.getItem('fc_debug_mode') === '1' ? 'checked' : ''}>
+            <span style="font-weight:600">Debug Mode</span>
+          </label>
+          <p class="text-muted" style="font-size:0.8rem;margin-top:4px">Bypasses week-end submission check, shows extra OCR diagnostics</p>
+        </div>
         <div style="display:flex;gap:8px;flex-wrap:wrap">
           <button class="btn btn-outline btn-sm" id="btn-load-demo">Load Demo Data</button>
           <button class="btn btn-outline btn-sm" id="btn-clear-worksheets" style="color:#e74c3c;border-color:#e74c3c">Delete All Worksheets</button>
@@ -2120,6 +2128,12 @@ const Views = (() => {
     // ---- Event Handlers ----
 
     // Developer tools (Steve only)
+    if ($('#chk-debug-mode')) {
+      $('#chk-debug-mode').addEventListener('change', (e) => {
+        localStorage.setItem('fc_debug_mode', e.target.checked ? '1' : '0');
+        showAlert($main(), `Debug mode ${e.target.checked ? 'ON' : 'OFF'}`, 'success');
+      });
+    }
     if ($('#btn-load-demo')) {
       $('#btn-load-demo').addEventListener('click', async () => {
         if (!confirm('Load demo data? This will replace existing data.')) return;
