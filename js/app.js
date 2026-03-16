@@ -71,12 +71,19 @@ const App = (() => {
         }
       }
 
-      // Route to current hash or dashboard
+      // Route to current hash or dashboard (first-time users go to help)
       if (!isInitialized) {
         isInitialized = true;
         const hash = window.location.hash || '#/dashboard';
         if (hash === '#/login' || hash === '#/register' || hash === '#/reset-password' || hash === '') {
-          window.location.hash = '#/dashboard';
+          // Check if this is a first-time user (never seen help page)
+          const hasSeenHelp = localStorage.getItem('fc_has_seen_help');
+          if (!hasSeenHelp) {
+            localStorage.setItem('fc_has_seen_help', '1');
+            window.location.hash = '#/help';
+          } else {
+            window.location.hash = '#/dashboard';
+          }
         } else {
           navigate(hash);
         }
@@ -189,6 +196,9 @@ const App = (() => {
         break;
       case 'children':
         await Views.renderChildren(currentFamily);
+        break;
+      case 'help':
+        Views.renderHelp();
         break;
       default:
         window.location.hash = '#/dashboard';

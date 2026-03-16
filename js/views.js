@@ -3091,6 +3091,89 @@ const Views = (() => {
     }
   }
 
+  // ============================================================
+  // HELP VIEW (in-app Getting Started guide)
+  // ============================================================
+  function renderHelp() {
+    $main().innerHTML = html`
+      <div class="page-header">
+        <h1 class="page-title">Getting Started</h1>
+      </div>
+
+      <div class="card">
+        <div class="card-title">What is Kid Tasker?</div>
+        <p style="margin:0;line-height:1.6">Kid Tasker helps families build positive habits by turning weekly chores and responsibilities into a printed checklist. Each week, you print a worksheet for each child. The child checks off tasks as they complete them, and at the end of the week a parent reviews the worksheet by scanning it back in. The system reads the checkboxes automatically and tracks progress over time through analytics.</p>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Initial Setup</div>
+        <div style="display:flex;flex-direction:column;gap:14px">
+          <div style="display:flex;gap:12px;align-items:flex-start">
+            <span style="flex-shrink:0;width:26px;height:26px;border-radius:50%;background:#4a6cf7;color:#fff;font-weight:700;font-size:0.8rem;display:flex;align-items:center;justify-content:center">1</span>
+            <div><strong>Create an account.</strong> Sign up with your email and password. This creates your parent account.</div>
+          </div>
+          <div style="display:flex;gap:12px;align-items:flex-start">
+            <span style="flex-shrink:0;width:26px;height:26px;border-radius:50%;background:#4a6cf7;color:#fff;font-weight:700;font-size:0.8rem;display:flex;align-items:center;justify-content:center">2</span>
+            <div><strong>Create your family.</strong> Give your family a name. If a second parent wants to join, go to Settings and send them an invite.</div>
+          </div>
+          <div style="display:flex;gap:12px;align-items:flex-start">
+            <span style="flex-shrink:0;width:26px;height:26px;border-radius:50%;background:#4a6cf7;color:#fff;font-weight:700;font-size:0.8rem;display:flex;align-items:center;justify-content:center">3</span>
+            <div><strong>Add your children.</strong> In <a href="#/settings">Settings</a>, add each child with their name and birthday. A set of default tasks will be pre-loaded.</div>
+          </div>
+          <div style="display:flex;gap:12px;align-items:flex-start">
+            <span style="flex-shrink:0;width:26px;height:26px;border-radius:50%;background:#4a6cf7;color:#fff;font-weight:700;font-size:0.8rem;display:flex;align-items:center;justify-content:center">4</span>
+            <div><strong>Customize tasks.</strong> From the <a href="#/dashboard">Dashboard</a>, tap a child's name to open their Checklist. Here you can add, remove, reorder, and categorize tasks. Each task can be assigned to specific days of the week.</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Weekly Workflow</div>
+        <div style="display:flex;flex-direction:column;gap:14px">
+          <div style="display:flex;gap:12px;align-items:flex-start">
+            <span style="flex-shrink:0;width:26px;height:26px;border-radius:50%;background:#28a745;color:#fff;font-weight:700;font-size:0.8rem;display:flex;align-items:center;justify-content:center">1</span>
+            <div><strong>Print the worksheet.</strong> Each week, go to the child's Checklist page and tap "Generate &amp; Print." This creates a PDF with all tasks, checkboxes for each day, and a QR code that identifies the worksheet. Print on standard letter paper at actual size.</div>
+          </div>
+          <div style="display:flex;gap:12px;align-items:flex-start">
+            <span style="flex-shrink:0;width:26px;height:26px;border-radius:50%;background:#28a745;color:#fff;font-weight:700;font-size:0.8rem;display:flex;align-items:center;justify-content:center">2</span>
+            <div><strong>Kids check off tasks.</strong> Throughout the week, your child marks the <em>left</em> checkbox for each task they complete. At the end of the week, a parent marks the <em>right</em> checkbox to confirm.</div>
+          </div>
+          <div style="display:flex;gap:12px;align-items:flex-start">
+            <span style="flex-shrink:0;width:26px;height:26px;border-radius:50%;background:#28a745;color:#fff;font-weight:700;font-size:0.8rem;display:flex;align-items:center;justify-content:center">3</span>
+            <div><strong>Scan and submit.</strong> Go to <a href="#/submit">Submit</a> and upload a photo or flatbed scan of the completed worksheet. The system reads the QR code and analyzes checkboxes automatically. The image can be in any orientation.</div>
+          </div>
+          <div style="display:flex;gap:12px;align-items:flex-start">
+            <span style="flex-shrink:0;width:26px;height:26px;border-radius:50%;background:#28a745;color:#fff;font-weight:700;font-size:0.8rem;display:flex;align-items:center;justify-content:center">4</span>
+            <div><strong>Review results.</strong> After scanning, you'll see what the system detected for both child-reported and parent-reported checkboxes. Correct any misreads before saving.</div>
+          </div>
+        </div>
+        <div style="background:#eef3ff;border-left:4px solid #4a6cf7;padding:10px 14px;border-radius:4px;margin-top:16px;font-size:0.9rem">
+          If your child marked tasks in blank rows that weren't pre-printed, the system will detect those too. You'll be prompted to name these "ad-hoc" tasks during review.
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Analytics &amp; Data Export</div>
+        <p style="margin:0 0 10px;line-height:1.6">The <a href="#/analytics">Analytics</a> page shows completion trends over time, broken down by category and day of week. The "Completion Rate Over Time" chart shows both child-reported and parent-reported results side by side.</p>
+        <p style="margin:0;line-height:1.6">In <a href="#/settings">Settings</a>, each child has a "Download Data" button that exports all scored worksheet data as a CSV file with both child and parent results. The child's name is not included for privacy.</p>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Tips for Best Results</div>
+        <div style="display:flex;flex-direction:column;gap:8px;line-height:1.6">
+          <p style="margin:0"><strong>Printing:</strong> Print at actual size (100%) on standard letter paper. No need for "Fit to Page."</p>
+          <p style="margin:0"><strong>Marking checkboxes:</strong> Use a pen, pencil, or marker. Any clear mark inside the box will be detected.</p>
+          <p style="margin:0"><strong>Scanning:</strong> A flatbed scanner gives the best results. Phone photos also work. Any orientation is fine.</p>
+          <p style="margin:0"><strong>Multiple parents:</strong> Invite a second parent from Settings. Both parents have full access.</p>
+        </div>
+      </div>
+
+      <div style="text-align:center;padding:16px 0">
+        <a href="#/dashboard" class="btn btn-primary">Go to Dashboard</a>
+      </div>
+    `;
+  }
+
   // ---- Public API ----
   return {
     renderLogin,
@@ -3107,6 +3190,7 @@ const Views = (() => {
     renderAnalytics,
     renderAdmin: renderSettings,
     renderSettings,
-    renderInviteAccept
+    renderInviteAccept,
+    renderHelp
   };
 })();
