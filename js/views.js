@@ -3159,6 +3159,63 @@ const Views = (() => {
       </div>
 
       <div class="card">
+        <div class="card-title">Example Tasks by Age Group</div>
+        <p style="margin:0 0 14px;line-height:1.6">When you add a child, Kid Tasker pre-loads age-appropriate tasks. You can customize these anytime from the Checklist page. Here are the defaults:</p>
+
+        <div style="margin-bottom:16px">
+          <div style="font-weight:600;margin-bottom:6px;color:#4a6cf7">Ages 4&ndash;6</div>
+          <table class="data-table" style="font-size:0.85rem;margin:0">
+            <thead><tr><th>Task</th><th>Category</th><th>Priority</th></tr></thead>
+            <tbody>
+              <tr><td>Brush teeth (morning &amp; night)</td><td>Health</td><td>A</td></tr>
+              <tr><td>Put dirty clothes in hamper</td><td>Cleaning</td><td>A</td></tr>
+              <tr><td>Put away toys before bed</td><td>Cleaning</td><td>A</td></tr>
+              <tr><td>Use good manners at meals</td><td>Maturity</td><td>B</td></tr>
+              <tr><td>Get dressed by yourself</td><td>Maturity</td><td>B</td></tr>
+              <tr><td>Read or be read to (15 min)</td><td>Homework</td><td>B</td></tr>
+              <tr><td>Screen time under 1 hour</td><td>Screen Time</td><td>A</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div style="margin-bottom:16px">
+          <div style="font-weight:600;margin-bottom:6px;color:#28a745">Ages 7&ndash;11</div>
+          <table class="data-table" style="font-size:0.85rem;margin:0">
+            <thead><tr><th>Task</th><th>Category</th><th>Priority</th></tr></thead>
+            <tbody>
+              <tr><td>Wake up on time</td><td>Maturity</td><td>A</td></tr>
+              <tr><td>Pack school bag</td><td>School Prep</td><td>A</td></tr>
+              <tr><td>Clean your room</td><td>Cleaning</td><td>A</td></tr>
+              <tr><td>Help set or clear the dinner table</td><td>Chores</td><td>B</td></tr>
+              <tr><td>Read or practice math (20 min)</td><td>Homework</td><td>B</td></tr>
+              <tr><td>Be kind to siblings</td><td>Social</td><td>A</td></tr>
+              <tr><td>Screen time under 2 hours</td><td>Screen Time</td><td>A</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div>
+          <div style="font-weight:600;margin-bottom:6px;color:#fd7e14">Ages 12+</div>
+          <table class="data-table" style="font-size:0.85rem;margin:0">
+            <thead><tr><th>Task</th><th>Category</th><th>Priority</th></tr></thead>
+            <tbody>
+              <tr><td>Wake up on time (no reminders)</td><td>Maturity</td><td>A</td></tr>
+              <tr><td>Complete homework before screens</td><td>Homework</td><td>A</td></tr>
+              <tr><td>Keep room and bathroom clean</td><td>Cleaning</td><td>A</td></tr>
+              <tr><td>Help with a household chore</td><td>Chores</td><td>B</td></tr>
+              <tr><td>Exercise or practice a sport (30 min)</td><td>Athletics</td><td>B</td></tr>
+              <tr><td>No phone at the dinner table</td><td>Maturity</td><td>A</td></tr>
+              <tr><td>Screen time under 2 hours</td><td>Screen Time</td><td>A</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div style="background:#eef3ff;border-left:4px solid #4a6cf7;padding:10px 14px;border-radius:4px;margin-top:16px;font-size:0.9rem">
+          Available categories: Cleaning, School Prep, Maturity, Homework, Chores, Health, Screen Time, Athletics, Social, and Other. Priority A tasks are the most important.
+        </div>
+      </div>
+
+      <div class="card">
         <div class="card-title">Tips for Best Results</div>
         <div style="display:flex;flex-direction:column;gap:8px;line-height:1.6">
           <p style="margin:0"><strong>Printing:</strong> Print at actual size (100%) on standard letter paper. No need for "Fit to Page."</p>

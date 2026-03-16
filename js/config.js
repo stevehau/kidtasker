@@ -30,22 +30,62 @@ const APP_CONFIG = {
   blankRowsPerDay: 3,
   defaultCategories: [
     'Cleaning', 'School Prep', 'Maturity', 'Homework',
-    'Chores', 'Health', 'Athletics', 'Social', 'Other'
+    'Chores', 'Health', 'Screen Time', 'Athletics', 'Social', 'Other'
   ],
   priorities: ['A', 'B', 'C'],
   daysOfWeek: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'],
   daysShort: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
   weekStartOptions: ['monday', 'sunday'],
   defaultWeekStart: 'monday',
-  defaultTasks: [
-    { text: 'Wake up on time', category: 'Maturity', priority: 'A', daysApplicable: ['Mon','Tue','Wed','Thu','Fri'] },
-    { text: 'Pack school bag', category: 'School Prep', priority: 'A', daysApplicable: ['Mon','Tue','Wed','Thu','Fri'] },
-    { text: 'Help set or clear the dinner table', category: 'Chores', priority: 'B', daysApplicable: ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'] },
-    { text: 'Clean your room', category: 'Cleaning', priority: 'A', daysApplicable: ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'] },
-    { text: 'Tidy the bathroom', category: 'Cleaning', priority: 'B', daysApplicable: ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'] },
-    { text: 'Read or practice math', category: 'Homework', priority: 'B', daysApplicable: ['Sat','Sun'] },
-    { text: 'Play well with siblings', category: 'Social', priority: 'A', daysApplicable: ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'] }
-  ]
+  // Age-grouped default tasks (selected based on child's age at creation)
+  defaultTasksByAge: {
+    // Ages 4-6: Simple habits, routine-building, gentle responsibilities
+    young: {
+      label: 'Ages 4\u20136',
+      maxAge: 6,
+      tasks: [
+        { text: 'Brush teeth (morning & night)', category: 'Health', priority: 'A', daysApplicable: ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'] },
+        { text: 'Put dirty clothes in hamper', category: 'Cleaning', priority: 'A', daysApplicable: ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'] },
+        { text: 'Put away toys before bed', category: 'Cleaning', priority: 'A', daysApplicable: ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'] },
+        { text: 'Use good manners at meals', category: 'Maturity', priority: 'B', daysApplicable: ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'] },
+        { text: 'Get dressed by yourself', category: 'Maturity', priority: 'B', daysApplicable: ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'] },
+        { text: 'Read or be read to (15 min)', category: 'Homework', priority: 'B', daysApplicable: ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'] },
+        { text: 'Screen time under 1 hour', category: 'Screen Time', priority: 'A', daysApplicable: ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'] },
+      ]
+    },
+    // Ages 7-11: School-age independence, chores, academic habits
+    middle: {
+      label: 'Ages 7\u201311',
+      maxAge: 11,
+      tasks: [
+        { text: 'Wake up on time', category: 'Maturity', priority: 'A', daysApplicable: ['Mon','Tue','Wed','Thu','Fri'] },
+        { text: 'Pack school bag', category: 'School Prep', priority: 'A', daysApplicable: ['Mon','Tue','Wed','Thu','Fri'] },
+        { text: 'Clean your room', category: 'Cleaning', priority: 'A', daysApplicable: ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'] },
+        { text: 'Help set or clear the dinner table', category: 'Chores', priority: 'B', daysApplicable: ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'] },
+        { text: 'Read or practice math (20 min)', category: 'Homework', priority: 'B', daysApplicable: ['Mon','Tue','Wed','Thu','Fri'] },
+        { text: 'Be kind to siblings', category: 'Social', priority: 'A', daysApplicable: ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'] },
+        { text: 'Screen time under 2 hours', category: 'Screen Time', priority: 'A', daysApplicable: ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'] },
+      ]
+    },
+    // Ages 12+: Teen responsibilities, self-management, household contribution
+    teen: {
+      label: 'Ages 12+',
+      maxAge: 99,
+      tasks: [
+        { text: 'Wake up on time (no reminders)', category: 'Maturity', priority: 'A', daysApplicable: ['Mon','Tue','Wed','Thu','Fri'] },
+        { text: 'Complete homework before screens', category: 'Homework', priority: 'A', daysApplicable: ['Mon','Tue','Wed','Thu','Fri'] },
+        { text: 'Keep room and bathroom clean', category: 'Cleaning', priority: 'A', daysApplicable: ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'] },
+        { text: 'Help with a household chore', category: 'Chores', priority: 'B', daysApplicable: ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'] },
+        { text: 'Exercise or practice a sport (30 min)', category: 'Athletics', priority: 'B', daysApplicable: ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'] },
+        { text: 'No phone at the dinner table', category: 'Maturity', priority: 'A', daysApplicable: ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'] },
+        { text: 'Screen time under 2 hours', category: 'Screen Time', priority: 'A', daysApplicable: ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'] },
+      ]
+    }
+  },
+  // Fallback for any code that still references the flat list
+  get defaultTasks() {
+    return this.defaultTasksByAge.middle.tasks;
+  }
 };
 
 // Helper function to get ordered days based on week start preference
