@@ -1635,8 +1635,8 @@ const Views = (() => {
           <div class="form-group" style="margin-bottom:0">
             <label>Child</label>
             <select class="form-control" id="analytics-child" style="min-width:160px">
-              <option value="">All Children</option>
-              ${children.map(c => `<option value="${c.id}" ${c.id === childId ? 'selected' : ''}>${c.name}</option>`).join('')}
+              ${children.length > 1 ? '<option value="">All Children</option>' : ''}
+              ${children.map(c => `<option value="${c.id}" ${c.id === childId || children.length === 1 ? 'selected' : ''}>${c.name}</option>`).join('')}
             </select>
           </div>
           <div class="form-group" style="margin-bottom:0">
@@ -1727,21 +1727,21 @@ const Views = (() => {
       </div>
 
       <div class="card">
-        <div class="card-title">Completion by Category</div>
+        <div class="card-title">Completion by Category <span style="font-size:0.75rem;font-weight:normal;color:#888">(Parent Reported)</span></div>
         <div class="chart-container">
           <canvas id="chart-categories"></canvas>
         </div>
       </div>
 
       <div class="card">
-        <div class="card-title">Completion by Day of Week</div>
+        <div class="card-title">Completion by Day of Week <span style="font-size:0.75rem;font-weight:normal;color:#888">(Parent Reported)</span></div>
         <div class="chart-container">
           <canvas id="chart-days"></canvas>
         </div>
       </div>
 
       <div class="card">
-        <div class="card-title">Detailed Breakdown by Category</div>
+        <div class="card-title">Detailed Breakdown by Category <span style="font-size:0.75rem;font-weight:normal;color:#888">(Parent Reported)</span></div>
         <table class="data-table">
           <thead>
             <tr>
@@ -1753,7 +1753,11 @@ const Views = (() => {
             </tr>
           </thead>
           <tbody>
-            ${Object.entries(stats.byCategory).map(([cat, data]) => html`
+            ${Object.entries(stats.byCategory).sort((a, b) => {
+              if (a[0] === 'Other') return 1;
+              if (b[0] === 'Other') return -1;
+              return b[1].rate - a[1].rate;
+            }).map(([cat, data]) => html`
               <tr>
                 <td>${cat}</td>
                 <td>${data.total}</td>
@@ -1776,6 +1780,7 @@ const Views = (() => {
   function calculateStats(worksheets) {
     let totalTasks = 0;
     let completedTasks = 0;
+    let childCompletedTasks = 0;
     const byCategory = {};
     const byDay = {};
     const byWeek = {};
@@ -1783,8 +1788,9 @@ const Views = (() => {
     APP_CONFIG.daysShort.forEach(d => { byDay[d] = { total: 0, completed: 0 }; });
 
     worksheets.forEach(ws => {
-      const weekKey = `W${ws.weekNumber} ${ws.year}`;
-      if (!byWeek[weekKey]) byWeek[weekKey] = { total: 0, completed: 0, label: weekKey };
+      const weekLabel = `W${ws.weekNumber}`;
+      const weekSortKey = `${ws.year}-${String(ws.weekNumber).padStart(2, '0')}`;
+      if (!byWeek[weekSortKey]) byWeek[weekSortKey] = { total: 0, completed: 0, childCompleted: 0, label: weekLabel, sortKey: weekSortKey };
 
       ws.items.forEach(item => {
         const cat = item.category || 'Other';
@@ -1795,13 +1801,17 @@ const Views = (() => {
             totalTasks++;
             byCategory[cat].total++;
             byDay[day].total++;
-            byWeek[weekKey].total++;
+            byWeek[weekSortKey].total++;
 
             if (item.results[day].completed) {
               completedTasks++;
               byCategory[cat].completed++;
               byDay[day].completed++;
-              byWeek[weekKey].completed++;
+              byWeek[weekSortKey].completed++;
+            }
+            if (item.results[day].childCompleted) {
+              childCompletedTasks++;
+              byWeek[weekSortKey].childCompleted++;
             }
           }
         });
@@ -1852,14 +1862,20 @@ const Views = (() => {
       });
     }
 
-    const weeklyRates = Object.values(byWeek).map(w => ({
-      label: w.label,
-      rate: w.total > 0 ? Math.round(w.completed / w.total * 100) : 0
-    }));
+    // Sort weeks by sortKey for chronological order
+    const weeklyRates = Object.values(byWeek)
+      .sort((a, b) => a.sortKey.localeCompare(b.sortKey))
+      .map(w => ({
+        label: w.label,
+        parentRate: w.total > 0 ? Math.round(w.completed / w.total * 100) : 0,
+        childRate: w.total > 0 ? Math.round(w.childCompleted / w.total * 100) : 0,
+        rate: w.total > 0 ? Math.round(w.completed / w.total * 100) : 0, // backward compat
+      }));
 
     return {
       totalTasks,
       completedTasks,
+      childCompletedTasks,
       completionRate: totalTasks > 0 ? Math.round(completedTasks / totalTasks * 100) : 0,
       totalWeeks: worksheets.length,
       byCategory,
@@ -1876,18 +1892,34 @@ const Views = (() => {
       data: {
         labels: stats.weeklyRates.map(w => w.label),
         datasets: [{
-          label: 'Completion Rate %',
-          data: stats.weeklyRates.map(w => w.rate),
+          label: 'Parent Reported',
+          data: stats.weeklyRates.map(w => w.parentRate),
           borderColor: '#4a6cf7',
           backgroundColor: 'rgba(74, 108, 247, 0.1)',
           fill: true,
-          tension: 0.3
+          tension: 0.3,
+          borderWidth: 2,
+        }, {
+          label: 'Child Reported',
+          data: stats.weeklyRates.map(w => w.childRate),
+          borderColor: '#28a745',
+          backgroundColor: 'rgba(40, 167, 69, 0.08)',
+          fill: true,
+          tension: 0.3,
+          borderWidth: 2,
+          borderDash: [5, 3],
         }]
       },
       options: {
         responsive: true, maintainAspectRatio: false,
         scales: { y: { beginAtZero: true, max: 100, ticks: { callback: v => v + '%' } } },
-        plugins: { legend: { display: false } }
+        plugins: {
+          legend: {
+            display: true,
+            position: 'bottom',
+            labels: { usePointStyle: true, padding: 16 }
+          }
+        }
       }
     });
   }
@@ -1895,14 +1927,19 @@ const Views = (() => {
   function renderCategoryChart(stats) {
     const ctx = document.getElementById('chart-categories');
     if (!ctx) return;
-    const cats = Object.entries(stats.byCategory);
+    // Sort by rate descending, but always put "Other" last
+    const cats = Object.entries(stats.byCategory).sort((a, b) => {
+      if (a[0] === 'Other') return 1;
+      if (b[0] === 'Other') return -1;
+      return b[1].rate - a[1].rate;
+    });
     const colors = ['#4a6cf7', '#28a745', '#ffc107', '#dc3545', '#6c757d', '#17a2b8', '#fd7e14', '#6610f2'];
     new Chart(ctx, {
       type: 'bar',
       data: {
         labels: cats.map(([c]) => c),
         datasets: [{
-          label: 'Completion Rate %',
+          label: 'Parent Reported %',
           data: cats.map(([, d]) => d.rate),
           backgroundColor: cats.map((_, i) => colors[i % colors.length] + '99'),
           borderColor: cats.map((_, i) => colors[i % colors.length]),
@@ -1926,7 +1963,7 @@ const Views = (() => {
       data: {
         labels: days,
         datasets: [{
-          label: 'Completion Rate %',
+          label: 'Parent Reported %',
           data: days.map(d => stats.byDay[d].total > 0 ? Math.round(stats.byDay[d].completed / stats.byDay[d].total * 100) : 0),
           backgroundColor: 'rgba(74, 108, 247, 0.6)',
           borderColor: '#4a6cf7',
@@ -2287,10 +2324,10 @@ const Views = (() => {
           });
           csvRows.push(row1);
 
-          // Row 2: empty, empty, then alternating Child Report / Parent Report
+          // Row 2: empty, empty, then alternating Child / Parent
           const row2 = ['', ''];
           dateColumns.forEach(() => {
-            row2.push('Child Report', 'Parent Report');
+            row2.push('Child', 'Parent');
           });
           csvRows.push(row2);
 
