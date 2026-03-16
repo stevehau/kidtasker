@@ -2187,9 +2187,10 @@ const Views = (() => {
         </form>
       </div>
 
-      <!-- Legal -->
+      <!-- Help & Legal -->
       <div class="card">
         <div style="display:flex;gap:16px;font-size:0.85rem">
+          <a href="help.html" target="_blank">Getting Started Guide</a>
           <a href="privacy.html" target="_blank">Privacy Policy</a>
           <a href="terms.html" target="_blank">Terms of Use</a>
         </div>
