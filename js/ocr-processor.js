@@ -511,14 +511,20 @@ const OCRProcessor = (() => {
     if (blueBar) {
       // Blue bar bottom edge = exact start of data rows
       dataStartMmY = blueBar.bottomMm;
-      const availableH = L.PAGE_H - L.MARGIN - footerReserve - blueBar.bottomMm;
+      // Match PDF generator's EXACT row height calculation:
+      // PDF uses: availableH = PAGE_H - MARGIN - footerReserve - (headerEnd - MARGIN) - 9
+      // where headerEnd = blueBar top, and 9 is the tableHeaderH used in the PDF calc
+      // (Note: actual table header drawn is 10mm, but PDF uses 9 in its height formula)
+      const pdfHeaderEnd = dataStartMmY - 10; // blue bar is 10mm tall
+      const pdfTableHeaderCalc = 9; // PDF generator's internal value
+      const availableH = L.PAGE_H - L.MARGIN - footerReserve - (pdfHeaderEnd - L.MARGIN) - pdfTableHeaderCalc;
       rowH = Math.min(Math.max(availableH / L.TOTAL_ROWS, 5.5), 11);
-      console.log(`[OCR v3] Blue bar detected: ${blueBar.topMm.toFixed(1)}-${blueBar.bottomMm.toFixed(1)}mm, dataStart=${dataStartMmY.toFixed(1)}mm, rowH=${rowH.toFixed(2)}mm`);
+      console.log(`[OCR v4] Blue bar detected: ${blueBar.topMm.toFixed(1)}-${blueBar.bottomMm.toFixed(1)}mm, dataStart=${dataStartMmY.toFixed(1)}mm, rowH=${rowH.toFixed(2)}mm`);
     } else {
       dataStartMmY = headerEnd + tableHeaderH;
       const availableH = L.PAGE_H - L.MARGIN - footerReserve - (headerEnd - L.MARGIN) - tableHeaderH;
       rowH = Math.min(Math.max(availableH / L.TOTAL_ROWS, 5.5), 11);
-      console.log(`[OCR v3] No blue bar, estimated dataStart=${dataStartMmY.toFixed(1)}mm, rowH=${rowH.toFixed(2)}mm`);
+      console.log(`[OCR v4] No blue bar, estimated dataStart=${dataStartMmY.toFixed(1)}mm, rowH=${rowH.toFixed(2)}mm`);
     }
 
     // Compute pixel sizes for sampling regions
@@ -730,6 +736,20 @@ const OCRProcessor = (() => {
 
   // ---- Blue Header Bar Detection (improved with mapper) ----
 
+  // Inverse mapper: given a pixel Y coordinate, find the mm Y that maps to it.
+  // Uses binary search since the forward mapper (mm → px) is monotonic in Y.
+  function inverseMapperY(mapper, targetPxY, mmX, searchMinMm, searchMaxMm) {
+    let lo = searchMinMm, hi = searchMaxMm;
+    for (let i = 0; i < 30; i++) {
+      const mid = (lo + hi) / 2;
+      const px = mapper(mmX, mid);
+      if (Math.abs(px.y - targetPxY) < 0.5) return mid;
+      if (px.y < targetPxY) lo = mid;
+      else hi = mid;
+    }
+    return (lo + hi) / 2;
+  }
+
   function findBlueHeaderBar(ctx, imgW, imgH, mapper) {
     // Use the mapper to convert expected blue bar position to pixels
     const L = PDFGenerator.layout;
@@ -767,8 +787,19 @@ const OCRProcessor = (() => {
           if (stillBlue > 5) barBottom = r2;
           else break;
         }
-        const topMm = (row / imgH) * L.PAGE_H;
-        const bottomMm = (barBottom / imgH) * L.PAGE_H;
+
+        // Convert pixel positions to mm using the INVERSE of the perspective mapper
+        // (not a simple linear scale, which ignores print scaling)
+        let topMm, bottomMm;
+        if (mapper) {
+          const pageCenterX = L.PAGE_W / 2;
+          topMm = inverseMapperY(mapper, row, pageCenterX, 0, L.PAGE_H);
+          bottomMm = inverseMapperY(mapper, barBottom, pageCenterX, 0, L.PAGE_H);
+          console.log(`[OCR] Blue bar px-to-mm via inverse mapper: top=${topMm.toFixed(1)}mm, bottom=${bottomMm.toFixed(1)}mm (was linear: ${((row / imgH) * L.PAGE_H).toFixed(1)}mm, ${((barBottom / imgH) * L.PAGE_H).toFixed(1)}mm)`);
+        } else {
+          topMm = (row / imgH) * L.PAGE_H;
+          bottomMm = (barBottom / imgH) * L.PAGE_H;
+        }
         return { topMm, bottomMm, topPx: row, bottomPx: barBottom };
       }
     }
