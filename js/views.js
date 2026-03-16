@@ -1755,11 +1755,14 @@ const Views = (() => {
         <table class="data-table">
           <thead>
             <tr>
-              <th>Category</th>
-              <th>Total</th>
-              <th>Completed</th>
-              <th>Rate</th>
-              <th>Trend</th>
+              <th rowspan="2" style="vertical-align:bottom">Category</th>
+              <th rowspan="2" style="vertical-align:bottom">Total Tasks</th>
+              <th colspan="2" class="text-center" style="border-bottom:none">Completed</th>
+              <th rowspan="2" style="vertical-align:bottom">Trend</th>
+            </tr>
+            <tr>
+              <th style="font-size:0.8rem;font-weight:normal;padding-top:2px">Tasks</th>
+              <th style="font-size:0.8rem;font-weight:normal;padding-top:2px">Rate</th>
             </tr>
           </thead>
           <tbody>
@@ -1773,7 +1776,7 @@ const Views = (() => {
                 <td>${data.total}</td>
                 <td>${data.completed}</td>
                 <td><strong>${data.rate}%</strong></td>
-                <td>${data.trend > 0 ? '&#9650; Improving' : data.trend < 0 ? '&#9660; Declining' : '&#8594; Steady'}</td>
+                <td>${stats.totalWeeks < 2 ? 'N/A' : data.trend > 0 ? '&#9650; Improving' : data.trend < 0 ? '&#9660; Declining' : '&#8594; Steady'}</td>
               </tr>
             `).join('')}
           </tbody>
