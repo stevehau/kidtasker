@@ -422,6 +422,43 @@ const OCRProcessor = (() => {
     } catch (e) { return 255; }
   }
 
+  // Detect diagonal strokes (checkmarks) — sample along both diagonals of the checkbox
+  // Returns max ink density found along either diagonal
+  function diagonalInk(ctx, cx, cy, halfSize, imgW, imgH, darkThresh) {
+    const r = Math.max(2, Math.round(halfSize));
+    const steps = Math.max(5, r); // number of sample points along each diagonal
+    let maxInk = 0;
+
+    // For each diagonal direction: top-left→bottom-right (\) and top-right→bottom-left (/)
+    for (const dir of [1, -1]) {
+      let darkCount = 0;
+      let totalCount = 0;
+      for (let i = 0; i < steps; i++) {
+        const t = (i / (steps - 1)) * 2 - 1; // -1 to 1
+        const sx = Math.round(cx + t * r);
+        const sy = Math.round(cy + t * dir * r);
+        if (sx < 0 || sx >= imgW || sy < 0 || sy >= imgH) continue;
+
+        // Sample a small cross at each point (3x3) for robustness
+        for (let dx = -1; dx <= 1; dx++) {
+          for (let dy = -1; dy <= 1; dy++) {
+            const px = sx + dx;
+            const py = sy + dy;
+            if (px < 0 || px >= imgW || py < 0 || py >= imgH) continue;
+            const pixel = ctx.getImageData(px, py, 1, 1).data;
+            const brightness = (pixel[0] + pixel[1] + pixel[2]) / 3;
+            if (brightness < darkThresh) darkCount++;
+            totalCount++;
+          }
+        }
+      }
+      if (totalCount > 0) {
+        maxInk = Math.max(maxInk, darkCount / totalCount);
+      }
+    }
+    return maxInk;
+  }
+
   // Count ink-density: fraction of pixels darker than a given brightness threshold
   function inkDensity(ctx, cx, cy, halfSize, imgW, imgH, darkThresh) {
     const r = Math.max(1, Math.round(halfSize));
@@ -485,14 +522,20 @@ const OCRProcessor = (() => {
     }
 
     // Compute pixel sizes for sampling regions
-    // Parent checkbox is CB_P mm (3.4mm). We sample the center 25% = 0.85mm radius
-    const centerSizeMm = L.CB_P * 0.25;
+    // Parent checkbox is CB_P mm (3.4mm). We sample the center 40% — catches handwritten strokes
+    // that don't pass through exact center, while still avoiding borders
+    const centerSizeMm = L.CB_P * 0.40;
     const surroundSizeMm = L.CB_P * 0.8; // slightly larger than the checkbox for surround
     const p1 = mapper(0, 0);
     const p2 = mapper(centerSizeMm, 0);
-    const centerHalfPx = Math.max(2, Math.abs(p2.x - p1.x));
+    const centerHalfPx = Math.max(3, Math.abs(p2.x - p1.x));
     const p3 = mapper(surroundSizeMm, 0);
-    const surroundHalfPx = Math.max(4, Math.abs(p3.x - p1.x));
+    const surroundHalfPx = Math.max(5, Math.abs(p3.x - p1.x));
+
+    // Compute diagonal sampling size (45% of checkbox, for stroke detection)
+    const diagSizeMm = L.CB_P * 0.45;
+    const pDiag = mapper(diagSizeMm, 0);
+    const diagHalfPx = Math.max(3, Math.abs(pDiag.x - p1.x));
 
     // Build debug overlay canvas (copy of scanned image with annotations)
     const debugCanvas = document.createElement('canvas');
@@ -530,13 +573,16 @@ const OCRProcessor = (() => {
 
         const parentPx = mapper(parentCenterMmX, parentCenterMmY);
 
-        // 1. Center brightness (tight inner region, avoids borders entirely)
+        // 1. Center brightness (inner region, 40% of checkbox to catch handwritten strokes)
         const centerBright = avgBrightness(ctx, parentPx.x, parentPx.y, centerHalfPx, imgW, imgH);
 
-        // 2. Ink density in center region (fraction of dark pixels)
-        const centerInk = inkDensity(ctx, parentPx.x, parentPx.y, centerHalfPx, imgW, imgH, 160);
+        // 2. Ink density in center region (dark pixel threshold 180 = more sensitive to pen marks)
+        const centerInk = inkDensity(ctx, parentPx.x, parentPx.y, centerHalfPx, imgW, imgH, 180);
 
-        // 3. Surround brightness (area around the checkbox for baseline)
+        // 3. Diagonal stroke detection — catches checkmarks that are lines, not fills
+        const diagInk = diagonalInk(ctx, parentPx.x, parentPx.y, diagHalfPx, imgW, imgH, 180);
+
+        // 4. Surround brightness (area around the checkbox for baseline)
         // Sample 4 points outside the checkbox (above, below, left, right)
         const offset = surroundHalfPx;
         const sAbove = avgBrightness(ctx, parentPx.x, parentPx.y - offset, centerHalfPx, imgW, imgH);
@@ -545,16 +591,20 @@ const OCRProcessor = (() => {
         const sRight = avgBrightness(ctx, parentPx.x + offset, parentPx.y, centerHalfPx, imgW, imgH);
         const surroundBright = (sAbove + sBelow + sLeft + sRight) / 4;
 
-        // 4. Contrast: how much darker is the center vs the surround?
+        // 5. Contrast: how much darker is the center vs the surround?
         //    Positive = center is darker = likely has ink
         const contrastDrop = surroundBright - centerBright;
         // Normalized contrast (0..1 scale)
         const contrastRatio = Math.max(0, contrastDrop) / Math.max(surroundBright, 1);
 
+        // Combined ink score: max of center fill and diagonal stroke detection
+        const combinedInk = Math.max(centerInk, diagInk);
+
         measurements.push({
           row, day: d, type: 'parent',
           px: parentPx,
-          centerBright, surroundBright, contrastDrop, contrastRatio, centerInk,
+          centerBright, surroundBright, contrastDrop, contrastRatio,
+          centerInk, diagInk, combinedInk,
           mmX: parentCenterMmX, mmY: parentCenterMmY,
         });
 
@@ -574,13 +624,13 @@ const OCRProcessor = (() => {
     // ---- Adaptive thresholding on parent contrast ratios ----
     const parentMeasurements = measurements.filter(m => m.type === 'parent');
     const contrastValues = parentMeasurements.map(m => m.contrastRatio).sort((a, b) => a - b);
-    const inkValues = parentMeasurements.map(m => m.centerInk).sort((a, b) => a - b);
+    const inkValues = parentMeasurements.map(m => m.combinedInk).sort((a, b) => a - b);
 
-    // Use BOTH contrast ratio and ink density for classification
+    // Use BOTH contrast ratio and combined ink density for classification
     // Otsu on contrast ratio
-    let contrastThreshold = 0.08;
+    let contrastThreshold = 0.06;
     if (contrastValues.length > 4) {
-      let bestThresh = 0.08, bestVar = 0;
+      let bestThresh = 0.06, bestVar = 0;
       for (let t = 0.02; t <= 0.50; t += 0.005) {
         const below = contrastValues.filter(v => v <= t);
         const above = contrastValues.filter(v => v > t);
@@ -590,14 +640,14 @@ const OCRProcessor = (() => {
         const v = below.length * above.length * (mA - mB) ** 2;
         if (v > bestVar) { bestVar = v; bestThresh = t; }
       }
-      contrastThreshold = Math.max(0.04, Math.min(bestThresh, 0.40));
+      contrastThreshold = Math.max(0.03, Math.min(bestThresh, 0.40));
     }
 
-    // Otsu on ink density
-    let inkThreshold = 0.10;
+    // Otsu on combined ink density (center + diagonal stroke detection)
+    let inkThreshold = 0.08;
     if (inkValues.length > 4) {
-      let bestThresh = 0.10, bestVar = 0;
-      for (let t = 0.03; t <= 0.60; t += 0.005) {
+      let bestThresh = 0.08, bestVar = 0;
+      for (let t = 0.02; t <= 0.60; t += 0.005) {
         const below = inkValues.filter(v => v <= t);
         const above = inkValues.filter(v => v > t);
         if (below.length === 0 || above.length === 0) continue;
@@ -620,13 +670,17 @@ const OCRProcessor = (() => {
       q75: contrastValues[Math.floor(contrastValues.length * 0.75)]?.toFixed(4),
       max: contrastValues[contrastValues.length - 1]?.toFixed(4),
     });
-    console.log('[OCR v3] Ink density values:', {
+    console.log('[OCR v3] Combined ink values (center+diagonal):', {
       min: inkValues[0]?.toFixed(4),
       q25: inkValues[Math.floor(inkValues.length * 0.25)]?.toFixed(4),
       median: inkValues[Math.floor(inkValues.length / 2)]?.toFixed(4),
       q75: inkValues[Math.floor(inkValues.length * 0.75)]?.toFixed(4),
       max: inkValues[inkValues.length - 1]?.toFixed(4),
     });
+    // Also log per-checkbox details for debugging
+    console.log('[OCR v3] Per-checkbox measurements:', parentMeasurements.map(m =>
+      `R${m.row}D${m.day}: contrast=${(m.contrastRatio*100).toFixed(1)}% center=${(m.centerInk*100).toFixed(1)}% diag=${(m.diagInk*100).toFixed(1)}% combined=${(m.combinedInk*100).toFixed(1)}%`
+    ));
 
     // ---- Classify and draw debug overlay ----
     const results = [];
@@ -647,23 +701,26 @@ const OCRProcessor = (() => {
 
         // Checkbox is checked if EITHER:
         // - contrast ratio exceeds threshold (ink makes center darker than surround)
-        // - ink density exceeds threshold (lots of dark pixels in center)
+        // - combined ink (center fill + diagonal strokes) exceeds threshold
         const checkedByContrast = pm.contrastRatio > contrastThreshold;
-        const checkedByInk = pm.centerInk > inkThreshold;
+        const checkedByInk = pm.combinedInk > inkThreshold;
         const parentChecked = checkedByContrast || checkedByInk;
 
         rowResults[dayName] = {
           completed: parentChecked,
           confirmed: parentChecked,
-          parentDarkness: pm.centerInk,
+          parentDarkness: pm.combinedInk,
           childDarkness: cm ? cm.centerInk : 0,
           contrastRatio: pm.contrastRatio,
+          centerInk: pm.centerInk,
+          diagInk: pm.diagInk,
+          combinedInk: pm.combinedInk,
           centerBright: pm.centerBright,
           surroundBright: pm.surroundBright,
         };
 
         // backward compat
-        darknessValues.push({ row, day: d, type: 'parent', value: pm.centerInk, px: pm.px });
+        darknessValues.push({ row, day: d, type: 'parent', value: pm.combinedInk, px: pm.px });
         if (cm) darknessValues.push({ row, day: d, type: 'child', value: cm.centerInk, px: cm.px });
 
         // ---- Draw debug markers on overlay ----
@@ -679,11 +736,20 @@ const OCRProcessor = (() => {
         dbg.moveTo(px.x, px.y - centerHalfPx - 2);
         dbg.lineTo(px.x, px.y + centerHalfPx + 2);
         dbg.stroke();
-        // Label with contrast value
+        // Draw diagonal sample lines on debug overlay
+        dbg.strokeStyle = parentChecked ? 'rgba(0,255,0,0.3)' : 'rgba(255,0,0,0.2)';
+        dbg.lineWidth = 1;
+        dbg.beginPath();
+        dbg.moveTo(px.x - diagHalfPx, px.y - diagHalfPx);
+        dbg.lineTo(px.x + diagHalfPx, px.y + diagHalfPx);
+        dbg.moveTo(px.x + diagHalfPx, px.y - diagHalfPx);
+        dbg.lineTo(px.x - diagHalfPx, px.y + diagHalfPx);
+        dbg.stroke();
+        // Label with contrast/center/diag values
         dbg.font = `${Math.max(8, Math.round(imgW / 300))}px monospace`;
         dbg.fillStyle = parentChecked ? '#00ff00' : '#ff0000';
         dbg.fillText(
-          `${(pm.contrastRatio * 100).toFixed(0)}/${(pm.centerInk * 100).toFixed(0)}`,
+          `c${(pm.contrastRatio * 100).toFixed(0)} i${(pm.centerInk * 100).toFixed(0)} d${(pm.diagInk * 100).toFixed(0)}`,
           px.x + centerHalfPx + 3,
           px.y - 2
         );
@@ -870,7 +936,8 @@ const OCRProcessor = (() => {
         Object.keys(dayResults[day]).forEach(itemIdx => {
           const i = parseInt(itemIdx);
           if (items[i]) {
-            items[i].results[day] = { completed: dayResults[day][itemIdx], confirmed: false };
+            const isChecked = dayResults[day][itemIdx];
+            items[i].results[day] = { completed: isChecked, confirmed: isChecked };
           }
         });
       });

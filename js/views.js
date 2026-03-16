@@ -1208,7 +1208,6 @@ const Views = (() => {
               <th>#</th>
               <th>Task</th>
               ${days.map(d => `<th class="text-center">${d}</th>`).join('')}
-              <th class="text-center" data-tooltip="Parent confirms all days for this task">Confirmed</th>
             </tr>
           </thead>
           <tbody>
@@ -1227,9 +1226,6 @@ const Views = (() => {
                     <input type="checkbox" class="result-check" data-item="${idx}" data-day="${d}" ${checked ? 'checked' : ''}>
                   </td>`;
                 }).join('')}
-                <td class="text-center">
-                  <input type="checkbox" class="confirm-check" data-item="${idx}" ${item.results && item.results._confirmed ? 'checked' : ''} title="Parent confirms all">
-                </td>
               </tr>
             `).join('')}
           </tbody>
@@ -1241,7 +1237,6 @@ const Views = (() => {
         <div class="flex gap-1 flex-wrap">
           <button class="btn btn-outline btn-sm" id="btn-check-all">Check All</button>
           <button class="btn btn-outline btn-sm" id="btn-uncheck-all">Uncheck All</button>
-          <button class="btn btn-outline btn-sm" id="btn-confirm-all">Confirm All</button>
         </div>
       </div>
     `;
@@ -1253,23 +1248,16 @@ const Views = (() => {
     $('#btn-uncheck-all').addEventListener('click', () => {
       document.querySelectorAll('.result-check').forEach(cb => cb.checked = false);
     });
-    $('#btn-confirm-all').addEventListener('click', () => {
-      document.querySelectorAll('.confirm-check').forEach(cb => cb.checked = true);
-    });
-
     // Save results
     $('#btn-save-results').addEventListener('click', async () => {
       const items = ws.items.map((item, idx) => {
         const results = {};
-        const confCb = document.querySelector(`.confirm-check[data-item="${idx}"]`);
-        const globalConfirmed = confCb ? confCb.checked : false;
         days.forEach(d => {
           const cb = document.querySelector(`.result-check[data-item="${idx}"][data-day="${d}"]`);
           if (cb) {
-            results[d] = { completed: cb.checked, confirmed: globalConfirmed };
+            results[d] = { completed: cb.checked, confirmed: cb.checked };
           }
         });
-        results._confirmed = globalConfirmed;
         return { index: idx, text: item.text, results };
       });
 
