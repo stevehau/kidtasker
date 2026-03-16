@@ -621,66 +621,25 @@ const OCRProcessor = (() => {
       }
     }
 
-    // ---- Adaptive thresholding on parent contrast ratios ----
+    // ---- Simple "any ink = checked" detection ----
+    // An empty checkbox center is white paper with near-zero ink.
+    // Any intentional mark (pen, pencil, marker) will produce measurable ink.
+    // We use a very low fixed threshold to catch even light marks,
+    // just above scanner noise floor (~2% ink from paper texture/noise).
     const parentMeasurements = measurements.filter(m => m.type === 'parent');
-    const contrastValues = parentMeasurements.map(m => m.contrastRatio).sort((a, b) => a - b);
-    const inkValues = parentMeasurements.map(m => m.combinedInk).sort((a, b) => a - b);
 
-    // Use BOTH contrast ratio and combined ink density for classification
-    // Otsu on contrast ratio
-    let contrastThreshold = 0.06;
-    if (contrastValues.length > 4) {
-      let bestThresh = 0.06, bestVar = 0;
-      for (let t = 0.02; t <= 0.50; t += 0.005) {
-        const below = contrastValues.filter(v => v <= t);
-        const above = contrastValues.filter(v => v > t);
-        if (below.length === 0 || above.length === 0) continue;
-        const mB = below.reduce((s, v) => s + v, 0) / below.length;
-        const mA = above.reduce((s, v) => s + v, 0) / above.length;
-        const v = below.length * above.length * (mA - mB) ** 2;
-        if (v > bestVar) { bestVar = v; bestThresh = t; }
-      }
-      contrastThreshold = Math.max(0.03, Math.min(bestThresh, 0.40));
-    }
+    // Fixed thresholds — deliberately low to catch any intentional mark
+    const INK_THRESHOLD = 0.03;      // 3% ink density = any mark at all
+    const CONTRAST_THRESHOLD = 0.02; // 2% contrast = slightly darker than surroundings
 
-    // Otsu on combined ink density (center + diagonal stroke detection)
-    let inkThreshold = 0.08;
-    if (inkValues.length > 4) {
-      let bestThresh = 0.08, bestVar = 0;
-      for (let t = 0.02; t <= 0.60; t += 0.005) {
-        const below = inkValues.filter(v => v <= t);
-        const above = inkValues.filter(v => v > t);
-        if (below.length === 0 || above.length === 0) continue;
-        const mB = below.reduce((s, v) => s + v, 0) / below.length;
-        const mA = above.reduce((s, v) => s + v, 0) / above.length;
-        const v = below.length * above.length * (mA - mB) ** 2;
-        if (v > bestVar) { bestVar = v; bestThresh = t; }
-      }
-      inkThreshold = Math.max(0.05, Math.min(bestThresh, 0.50));
-    }
-
-    console.log('[OCR v3] Thresholds:', {
-      contrastThreshold: contrastThreshold.toFixed(4),
-      inkThreshold: inkThreshold.toFixed(4),
+    // Log all measurements for debugging
+    console.log('[OCR v4] Detection mode: ANY INK = CHECKED');
+    console.log('[OCR v4] Fixed thresholds: ink >= 3%, contrast >= 2%');
+    console.log('[OCR v4] Per-checkbox measurements:');
+    parentMeasurements.forEach(m => {
+      const hasInk = m.combinedInk > INK_THRESHOLD || m.contrastRatio > CONTRAST_THRESHOLD;
+      console.log(`  R${m.row}D${m.day}: ${hasInk ? 'CHECKED' : 'empty  '} | contrast=${(m.contrastRatio*100).toFixed(1)}% center=${(m.centerInk*100).toFixed(1)}% diag=${(m.diagInk*100).toFixed(1)}% combined=${(m.combinedInk*100).toFixed(1)}% | bright: center=${m.centerBright.toFixed(0)} surround=${m.surroundBright.toFixed(0)}`);
     });
-    console.log('[OCR v3] Contrast values:', {
-      min: contrastValues[0]?.toFixed(4),
-      q25: contrastValues[Math.floor(contrastValues.length * 0.25)]?.toFixed(4),
-      median: contrastValues[Math.floor(contrastValues.length / 2)]?.toFixed(4),
-      q75: contrastValues[Math.floor(contrastValues.length * 0.75)]?.toFixed(4),
-      max: contrastValues[contrastValues.length - 1]?.toFixed(4),
-    });
-    console.log('[OCR v3] Combined ink values (center+diagonal):', {
-      min: inkValues[0]?.toFixed(4),
-      q25: inkValues[Math.floor(inkValues.length * 0.25)]?.toFixed(4),
-      median: inkValues[Math.floor(inkValues.length / 2)]?.toFixed(4),
-      q75: inkValues[Math.floor(inkValues.length * 0.75)]?.toFixed(4),
-      max: inkValues[inkValues.length - 1]?.toFixed(4),
-    });
-    // Also log per-checkbox details for debugging
-    console.log('[OCR v3] Per-checkbox measurements:', parentMeasurements.map(m =>
-      `R${m.row}D${m.day}: contrast=${(m.contrastRatio*100).toFixed(1)}% center=${(m.centerInk*100).toFixed(1)}% diag=${(m.diagInk*100).toFixed(1)}% combined=${(m.combinedInk*100).toFixed(1)}%`
-    ));
 
     // ---- Classify and draw debug overlay ----
     const results = [];
@@ -699,12 +658,10 @@ const OCRProcessor = (() => {
         const cm = measurements.find(m => m.row === row && m.day === d && m.type === 'child');
         if (!pm) continue;
 
-        // Checkbox is checked if EITHER:
-        // - contrast ratio exceeds threshold (ink makes center darker than surround)
-        // - combined ink (center fill + diagonal strokes) exceeds threshold
-        const checkedByContrast = pm.contrastRatio > contrastThreshold;
-        const checkedByInk = pm.combinedInk > inkThreshold;
-        const parentChecked = checkedByContrast || checkedByInk;
+        // Any ink in the checkbox = checked. Simple and decisive.
+        const hasInk = pm.combinedInk > INK_THRESHOLD;
+        const hasContrast = pm.contrastRatio > CONTRAST_THRESHOLD;
+        const parentChecked = hasInk || hasContrast;
 
         rowResults[dayName] = {
           completed: parentChecked,
@@ -766,7 +723,7 @@ const OCRProcessor = (() => {
     }
 
     return {
-      results, threshold: { contrast: contrastThreshold, ink: inkThreshold },
+      results, threshold: { contrast: CONTRAST_THRESHOLD, ink: INK_THRESHOLD },
       darknessValues, debugCanvas,
     };
   }
