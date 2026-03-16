@@ -485,16 +485,18 @@ const OCRProcessor = (() => {
     return maxInk;
   }
 
-  // Check if a pixel is handwritten ink (not a printed blue checkbox border)
-  // Blue borders have high blue channel relative to red/green
+  // Check if a pixel is handwritten ink (not a printed checkbox border).
+  // The PDF now uses very light borders (brightness ~210-220) so any pen/pencil
+  // mark (brightness < 160) is clearly distinguishable. We also reject any pixel
+  // that looks like a scanned version of the light blue/gray borders.
   function isHandwrittenInk(r, g, b, darkThresh) {
     const brightness = (r + g + b) / 3;
-    if (brightness >= darkThresh) return false; // too light
-    // Exclude printed blue pixels (checkbox borders): high blue, low red
-    if (b > 150 && b > r * 1.3 && b > g * 1.1) return false;
-    // Exclude printed light blue/purple UI elements
-    if (b > 120 && b > r * 1.2 && brightness > 100) return false;
-    return true; // dark, non-blue = likely pen/pencil ink
+    if (brightness >= darkThresh) return false; // too light to be ink
+    // Exclude scanned blue border remnants: high blue relative to red
+    if (b > 140 && b > r * 1.2 && brightness > 120) return false;
+    // Exclude scanned gray border remnants: all channels similar and not very dark
+    if (brightness > 150 && Math.abs(r - g) < 20 && Math.abs(g - b) < 20) return false;
+    return true; // genuinely dark mark = pen/pencil ink
   }
 
   // Count ink-density: fraction of pixels that are handwritten ink (not blue borders)
@@ -717,11 +719,11 @@ const OCRProcessor = (() => {
         // 1. Center brightness (inner region, 40% of checkbox to catch handwritten strokes)
         const centerBright = avgBrightness(ctx, parentPx.x, parentPx.y, centerHalfPx, imgW, imgH);
 
-        // 2. Ink density in center region (dark pixel threshold 180 = more sensitive to pen marks)
-        const centerInk = inkDensity(ctx, parentPx.x, parentPx.y, centerHalfPx, imgW, imgH, 180);
+        // 2. Ink density in center region (threshold 160 = catches pen/pencil, ignores light borders)
+        const centerInk = inkDensity(ctx, parentPx.x, parentPx.y, centerHalfPx, imgW, imgH, 160);
 
         // 3. Diagonal stroke detection — catches checkmarks that are lines, not fills
-        const diagInk = diagonalInk(ctx, parentPx.x, parentPx.y, diagHalfPx, imgW, imgH, 180);
+        const diagInk = diagonalInk(ctx, parentPx.x, parentPx.y, diagHalfPx, imgW, imgH, 160);
 
         // 4. Surround brightness (area around the checkbox for baseline)
         // Sample 4 points outside the checkbox (above, below, left, right)
@@ -753,7 +755,7 @@ const OCRProcessor = (() => {
         const childCenterMmX = dayX + (halfW - L.CB) / 2 + L.CB / 2;
         const childPx = mapper(childCenterMmX, midY);
         const childCenterBright = avgBrightness(ctx, childPx.x, childPx.y, centerHalfPx, imgW, imgH);
-        const childInk = inkDensity(ctx, childPx.x, childPx.y, centerHalfPx, imgW, imgH, 160);
+        const childInk = inkDensity(ctx, childPx.x, childPx.y, centerHalfPx, imgW, imgH, 150);
         measurements.push({
           row, day: d, type: 'child',
           px: childPx,

@@ -10,8 +10,8 @@ const PDFGenerator = (() => {
   const PAGE_W = 279.4;
   const PAGE_H = 215.9;
   const CONTENT_W = PAGE_W - 2 * MARGIN;
-  const CB = 5.0; // checkbox size (increased from 3.8 for easier marking and OCR detection)
-  const CB_P = 4.5; // parent OK checkbox (increased from 3.4 for better OCR accuracy)
+  const CB = 7.0; // checkbox size — big for kids to mark and OCR to detect
+  const CB_P = 6.5; // parent OK checkbox — big for easy marking and reliable OCR
   const TOTAL_ROWS = 10; // always print exactly 10 rows
   const BLUE = [74, 108, 247];
   const GOLD = [243, 156, 18];
@@ -450,14 +450,16 @@ const PDFGenerator = (() => {
       if (isApplicable) {
         const childCbX = dayX + (halfW - CB) / 2;
         const childCbY = midY - CB / 2;
-        doc.setDrawColor(160, 160, 160);
-        doc.setLineWidth(0.25);
+        // Very light gray border — OCR ignores (brightness ~220, well above ink threshold)
+        doc.setDrawColor(210, 215, 220);
+        doc.setLineWidth(0.2);
         doc.rect(childCbX, childCbY, CB, CB);
 
         const parentCbX = dayX + halfW + (halfW - CB_P) / 2;
         const parentCbY = midY - CB_P / 2;
-        doc.setDrawColor(...BLUE);
-        doc.setLineWidth(0.3);
+        // Very light cyan border — OCR ignores (brightness ~210, well above ink threshold)
+        doc.setDrawColor(180, 205, 240);
+        doc.setLineWidth(0.2);
         doc.rect(parentCbX, parentCbY, CB_P, CB_P);
       } else {
         doc.setFillColor(230, 230, 230);
@@ -494,9 +496,10 @@ const PDFGenerator = (() => {
   }
 
   // Registration mark positions (mm from page origin)
-  // Placed in the margin area (outside content) so they're never hidden by content
-  const REG_MARK_SIZE = 5; // mm - size of each registration mark
-  const REG_INSET = 2; // mm from page edge
+  // Placed well inside the printable area so printers don't need "Fit to Page" scaling.
+  // Most printers can't print within 3-5mm of the edge; 8mm inset avoids this entirely.
+  const REG_MARK_SIZE = 4; // mm - size of each registration mark
+  const REG_INSET = 8; // mm from page edge — safely inside printable area
   const REG_MARKS = {
     topLeft:     { x: REG_INSET,                          y: REG_INSET },
     topRight:    { x: PAGE_W - REG_INSET - REG_MARK_SIZE, y: REG_INSET },
@@ -505,9 +508,9 @@ const PDFGenerator = (() => {
   };
 
   function drawRegistrationMarks(doc) {
-    // Draw filled L-shaped corner brackets at each page corner (in margin)
+    // Draw filled L-shaped corner brackets inside the margin (not at page edge)
     const armLen = REG_MARK_SIZE;
-    const thickness = 1.2; // thicker for better detection
+    const thickness = 1.0; // thick enough for reliable detection at 300dpi
 
     doc.setFillColor(0, 0, 0);
 
