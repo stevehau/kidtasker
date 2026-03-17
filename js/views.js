@@ -1353,18 +1353,42 @@ const Views = (() => {
             </div>
           </div>
 
-          <!-- Smartphone Photo Card (Coming Soon) -->
+          <!-- Smartphone Photo Card -->
+          ${localStorage.getItem('fc_beta_camera') === '1' ? html`
+          <div class="card" style="margin:0">
+            <div class="card-title" style="margin-bottom:12px">
+              <div style="font-size:2rem;margin-bottom:8px">📷</div>
+              Smartphone Camera
+              <span class="badge" style="background:#8b5cf6;color:#fff;font-size:0.65rem;padding:1px 6px;border-radius:8px;margin-left:6px;vertical-align:middle">BETA</span>
+            </div>
+            <p class="text-muted" style="font-size:0.9rem;margin-bottom:16px">Use your phone's camera to scan the worksheet</p>
+            <div class="scanner-area" id="camera-scan-zone" style="cursor:pointer">
+              <div style="font-size:2.5rem;margin-bottom:8px;opacity:0.6">📸</div>
+              <p>Tap to open camera</p>
+              <p style="font-size:0.8rem">(Rear camera recommended)</p>
+            </div>
+            <div style="text-align:center;margin-top:12px">
+              <span class="text-muted" style="font-size:0.78rem">— or upload a photo —</span>
+            </div>
+            <div class="scanner-area" id="drop-zone-photo" style="margin-top:8px;padding:12px">
+              <p>Drop photo here or click to upload</p>
+              <p style="font-size:0.8rem">(JPG, PNG)</p>
+              <input type="file" id="scan-file-photo" accept="image/*" style="display:none">
+            </div>
+          </div>
+          ` : html`
           <div class="card" style="margin:0;opacity:0.55;pointer-events:none">
             <div class="card-title" style="margin-bottom:12px">
               <div style="font-size:2rem;margin-bottom:8px">📷</div>
-              Smartphone Photo
+              Smartphone Camera
             </div>
-            <p class="text-muted" style="font-size:0.9rem;margin-bottom:16px">Coming soon &mdash; use a flatbed scanner for now</p>
+            <p class="text-muted" style="font-size:0.9rem;margin-bottom:16px">Enable in Settings &rarr; Beta Features</p>
             <div class="scanner-area" id="drop-zone-photo" style="border-style:dashed;opacity:0.5">
-              <p style="color:#999">Coming Soon</p>
+              <p style="color:#999">Beta Feature</p>
               <input type="file" id="scan-file-photo" accept="image/*" capture="environment" style="display:none" disabled>
             </div>
           </div>
+          `}
         </div>
 
         <div id="scan-preview-area" class="hidden">
@@ -1425,21 +1449,42 @@ const Views = (() => {
       if (fileInputFlatbed.files.length) processFile(fileInputFlatbed.files[0], family, 'flatbed');
     });
 
+    // Camera Scan (Beta)
+    const cameraScanZone = $('#camera-scan-zone');
+    if (cameraScanZone) {
+      cameraScanZone.addEventListener('click', async () => {
+        if (typeof CameraScanner === 'undefined' || !CameraScanner.isSupported()) {
+          showAlert($main(), 'Camera is not supported on this device or browser. Try uploading a photo instead.', 'danger');
+          return;
+        }
+        try {
+          await CameraScanner.open((file) => {
+            // File captured from camera — feed into existing OCR pipeline
+            processFile(file, family, 'camera');
+          });
+        } catch (err) {
+          showAlert($main(), err.message || 'Could not open camera.', 'danger');
+        }
+      });
+    }
+
     // File upload - Smartphone Photo
     const dropZonePhoto = $('#drop-zone-photo');
     const fileInputPhoto = $('#scan-file-photo');
 
-    dropZonePhoto.addEventListener('click', () => fileInputPhoto.click());
-    dropZonePhoto.addEventListener('dragover', (e) => { e.preventDefault(); dropZonePhoto.classList.add('dragover'); });
-    dropZonePhoto.addEventListener('dragleave', () => dropZonePhoto.classList.remove('dragover'));
-    dropZonePhoto.addEventListener('drop', (e) => {
-      e.preventDefault();
-      dropZonePhoto.classList.remove('dragover');
-      if (e.dataTransfer.files.length) showPhotoCropOverlay(e.dataTransfer.files[0], family);
-    });
-    fileInputPhoto.addEventListener('change', () => {
-      if (fileInputPhoto.files.length) showPhotoCropOverlay(fileInputPhoto.files[0], family);
-    });
+    if (dropZonePhoto && fileInputPhoto) {
+      dropZonePhoto.addEventListener('click', () => fileInputPhoto.click());
+      dropZonePhoto.addEventListener('dragover', (e) => { e.preventDefault(); dropZonePhoto.classList.add('dragover'); });
+      dropZonePhoto.addEventListener('dragleave', () => dropZonePhoto.classList.remove('dragover'));
+      dropZonePhoto.addEventListener('drop', (e) => {
+        e.preventDefault();
+        dropZonePhoto.classList.remove('dragover');
+        if (e.dataTransfer.files.length) processFile(e.dataTransfer.files[0], family, 'camera');
+      });
+      fileInputPhoto.addEventListener('change', () => {
+        if (fileInputPhoto.files.length) processFile(fileInputPhoto.files[0], family, 'camera');
+      });
+    }
 
     // Manual lookup
     $('#btn-lookup').addEventListener('click', async () => {
@@ -2237,6 +2282,20 @@ const Views = (() => {
         </form>
       </div>
 
+      <!-- Beta Features -->
+      <div class="card" style="border:1px solid #8b5cf6">
+        <div class="card-title" style="color:#8b5cf6">Beta Features</div>
+        <p class="text-muted mb-2" style="font-size:0.85rem">Try experimental features before they're fully released.</p>
+        <div class="form-group" style="margin-bottom:0">
+          <label style="display:flex;align-items:center;cursor:pointer;gap:8px">
+            <input type="checkbox" id="chk-beta-camera" ${localStorage.getItem('fc_beta_camera') === '1' ? 'checked' : ''}>
+            <span style="font-weight:600">Camera Scan</span>
+            <span class="badge" style="background:#8b5cf6;color:#fff;font-size:0.7rem;padding:1px 6px;border-radius:8px">BETA</span>
+          </label>
+          <p class="text-muted" style="font-size:0.8rem;margin-top:4px">Use your smartphone camera to scan completed worksheets directly in the app, instead of uploading a file.</p>
+        </div>
+      </div>
+
       <!-- Help & Legal -->
       <div class="card">
         <div style="display:flex;gap:16px;font-size:0.85rem">
@@ -2268,6 +2327,14 @@ const Views = (() => {
     `;
 
     // ---- Event Handlers ----
+
+    // Beta features
+    if ($('#chk-beta-camera')) {
+      $('#chk-beta-camera').addEventListener('change', (e) => {
+        localStorage.setItem('fc_beta_camera', e.target.checked ? '1' : '0');
+        showAlert($main(), `Camera Scan beta ${e.target.checked ? 'enabled' : 'disabled'}. Go to Submit to try it!`, 'success');
+      });
+    }
 
     // Developer tools (Steve only)
     if ($('#chk-debug-mode')) {
