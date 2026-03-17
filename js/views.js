@@ -2062,10 +2062,48 @@ const Views = (() => {
         `}
       </div>
 
+      <!-- Owner -->
+      ${(() => {
+        const ownerUid = family.ownerUid || (family.members && family.members[0]);
+        const owner = members.find(m => m.uid === ownerUid);
+        const otherParents = members.filter(m => m.uid !== ownerUid);
+        return html`
+      <div class="card">
+        <div class="card-title">Owner</div>
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>Email</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${owner ? html`
+            <tr data-uid="${owner.uid}">
+              <td><strong>${owner.displayName}</strong></td>
+              <td>${owner.email}</td>
+              <td>
+                <button class="btn btn-sm btn-outline btn-edit-member" data-uid="${owner.uid}" data-name="${owner.displayName}" data-email="${owner.email}">Edit</button>
+                <button class="btn btn-sm btn-outline btn-reset-pw" data-uid="${owner.uid}" data-name="${owner.displayName}">Reset Password</button>
+              </td>
+            </tr>
+            ` : ''}
+          </tbody>
+        </table>
+      </div>
+
       <!-- Parents -->
       <div class="card">
-        <div class="card-title">Parents</div>
-        <p class="text-muted mb-2" style="font-size:0.85rem">All parents are administrators and have full access to manage children, worksheets, and settings.</p>
+        <div class="card-title" style="display:flex;justify-content:space-between;align-items:center">
+          <span>Parents</span>
+        </div>
+        <p class="text-muted mb-2" style="font-size:0.85rem">All parents have full access to manage children, worksheets, and settings.</p>
+        ${otherParents.length === 0 ? html`
+          <div class="empty-state" style="margin:12px 0">
+            <p class="text-muted">No additional parents. Use "Invite a Parent" below to add one.</p>
+          </div>
+        ` : html`
         <table class="data-table" id="members-table">
           <thead>
             <tr>
@@ -2075,23 +2113,22 @@ const Views = (() => {
             </tr>
           </thead>
           <tbody>
-            ${members.map(m => html`
+            ${otherParents.map(m => html`
               <tr data-uid="${m.uid}">
-                <td>
-                  <strong>${m.displayName}</strong>
-                  ${m.uid === currentUid ? '<span class="badge badge-info" style="margin-left:6px">You</span>' : ''}
-                </td>
+                <td><strong>${m.displayName}</strong></td>
                 <td>${m.email}</td>
                 <td>
                   <button class="btn btn-sm btn-outline btn-edit-member" data-uid="${m.uid}" data-name="${m.displayName}" data-email="${m.email}">Edit</button>
                   <button class="btn btn-sm btn-outline btn-reset-pw" data-uid="${m.uid}" data-name="${m.displayName}">Reset Password</button>
-                  ${m.uid !== currentUid ? html`<button class="btn btn-sm btn-danger btn-remove-member" data-uid="${m.uid}" data-name="${m.displayName}">Remove</button>` : ''}
+                  <button class="btn btn-sm btn-danger btn-remove-member" data-uid="${m.uid}" data-name="${m.displayName}">Remove</button>
                 </td>
               </tr>
             `).join('')}
           </tbody>
         </table>
-      </div>
+        `}
+      </div>`;
+      })()}
 
       <!-- Family Settings -->
       <div class="card">

@@ -129,6 +129,7 @@ const Store = (() => {
         id: generateId(),
         name,
         members: [userId],
+        ownerUid: userId,
         weekStart: 'monday',
         createdAt: new Date().toISOString()
       };
@@ -595,6 +596,8 @@ const Store = (() => {
       const fam = families.find(f => f.id === familyId);
       if (!fam) throw new Error('Family not found.');
       if (fam.members.length <= 1) throw new Error('Cannot remove the last member.');
+      const ownerUid = fam.ownerUid || fam.members[0];
+      if (uid === ownerUid) throw new Error('Cannot remove the account owner.');
       fam.members = fam.members.filter(m => m !== uid);
       this._saveCollection('families', families);
       return fam;
@@ -700,9 +703,9 @@ const Store = (() => {
 
     async createFamily(name, userId) {
       const ref = await db.collection('families').add({
-        name, members: [userId], weekStart: 'monday', createdAt: new Date().toISOString()
+        name, members: [userId], ownerUid: userId, weekStart: 'monday', createdAt: new Date().toISOString()
       });
-      return { id: ref.id, name, members: [userId], weekStart: 'monday' };
+      return { id: ref.id, name, members: [userId], ownerUid: userId, weekStart: 'monday' };
     },
 
     async joinFamily(familyId, userId) {
@@ -1097,6 +1100,11 @@ const Store = (() => {
     },
 
     async removeFamilyMember(familyId, uid) {
+      const famDoc = await db.collection('families').doc(familyId).get();
+      if (!famDoc.exists) throw new Error('Family not found.');
+      const famData = famDoc.data();
+      const ownerUid = famData.ownerUid || (famData.members && famData.members[0]);
+      if (uid === ownerUid) throw new Error('Cannot remove the account owner.');
       await db.collection('families').doc(familyId).update({
         members: firebase.firestore.FieldValue.arrayRemove(uid)
       });
