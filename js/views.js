@@ -2207,48 +2207,13 @@ const Views = (() => {
         `}
       </div>
 
-      <!-- Owner -->
+      <!-- Parent(s) -->
       ${(() => {
         const ownerUid = family.ownerUid || (family.members && family.members[0]);
-        const owner = members.find(m => m.uid === ownerUid);
-        const otherParents = members.filter(m => m.uid !== ownerUid);
         return html`
       <div class="card">
-        <div class="card-title">Owner</div>
-        <table class="data-table">
-          <thead>
-            <tr>
-              <th>Name</th>
-              <th>Email</th>
-              <th>Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${owner ? html`
-            <tr data-uid="${owner.uid}">
-              <td><strong>${owner.displayName}</strong></td>
-              <td>${owner.email}</td>
-              <td>
-                <button class="btn btn-sm btn-outline btn-edit-member" data-uid="${owner.uid}" data-name="${owner.displayName}" data-email="${owner.email}">Edit</button>
-                <button class="btn btn-sm btn-outline btn-reset-pw" data-uid="${owner.uid}" data-name="${owner.displayName}">Reset Password</button>
-              </td>
-            </tr>
-            ` : ''}
-          </tbody>
-        </table>
-      </div>
-
-      <!-- Parents -->
-      <div class="card">
-        <div class="card-title" style="display:flex;justify-content:space-between;align-items:center">
-          <span>Parents</span>
-        </div>
+        <div class="card-title">Parent(s)</div>
         <p class="text-muted mb-2" style="font-size:0.85rem">All parents have full access to manage children, worksheets, and settings.</p>
-        ${otherParents.length === 0 ? html`
-          <div class="empty-state" style="margin:12px 0">
-            <p class="text-muted">No additional parents. Use "Invite a Parent" below to add one.</p>
-          </div>
-        ` : html`
         <table class="data-table" id="members-table">
           <thead>
             <tr>
@@ -2258,20 +2223,24 @@ const Views = (() => {
             </tr>
           </thead>
           <tbody>
-            ${otherParents.map(m => html`
+            ${members.map(m => {
+              const isOwner = m.uid === ownerUid;
+              return html`
               <tr data-uid="${m.uid}">
-                <td><strong>${m.displayName}</strong></td>
+                <td>
+                  <strong>${m.displayName}</strong>
+                  ${isOwner ? '<span class="badge" style="background:#4a6cf7;color:#fff;font-size:0.65rem;padding:1px 6px;border-radius:8px;margin-left:6px;vertical-align:middle">Owner</span>' : ''}
+                </td>
                 <td>${m.email}</td>
                 <td>
                   <button class="btn btn-sm btn-outline btn-edit-member" data-uid="${m.uid}" data-name="${m.displayName}" data-email="${m.email}">Edit</button>
                   <button class="btn btn-sm btn-outline btn-reset-pw" data-uid="${m.uid}" data-name="${m.displayName}">Reset Password</button>
-                  <button class="btn btn-sm btn-danger btn-remove-member" data-uid="${m.uid}" data-name="${m.displayName}">Remove</button>
+                  ${!isOwner ? html`<button class="btn btn-sm btn-danger btn-remove-member" data-uid="${m.uid}" data-name="${m.displayName}">Remove</button>` : ''}
                 </td>
               </tr>
-            `).join('')}
+            `}).join('')}
           </tbody>
         </table>
-        `}
       </div>`;
       })()}
 
@@ -2305,11 +2274,17 @@ const Views = (() => {
             <p class="text-muted mt-1" style="font-size:0.78rem">Share this link with the other parent via text, email, or any messaging app. They'll be able to create an account and join your family automatically.</p>
           </div>
         </div>
-        ${pendingInvites.length > 0 ? html`
+        ${(() => {
+          // Filter out invites for emails that already belong to current members
+          const memberEmails = members.map(m => (m.email || '').toLowerCase());
+          const activePendingInvites = pendingInvites.filter(inv =>
+            !inv.inviteeEmail || !memberEmails.includes(inv.inviteeEmail.toLowerCase())
+          );
+          return activePendingInvites.length > 0 ? html`
         <div class="form-group" style="border-top:1px solid #eee;padding-top:12px;margin-top:8px">
           <label style="font-size:0.85rem;font-weight:600">Pending Invites</label>
           <div style="margin-top:6px">
-            ${pendingInvites.map(inv => {
+            ${activePendingInvites.map(inv => {
               const isExpired = new Date(inv.expiresAt) < new Date();
               const expiresIn = Math.max(0, Math.ceil((new Date(inv.expiresAt) - new Date()) / (1000 * 60 * 60 * 24)));
               return html`
@@ -2322,7 +2297,8 @@ const Views = (() => {
             }).join('')}
           </div>
         </div>
-        ` : ''}
+        ` : '';
+        })()}
         <div class="form-group">
           <label>Week Start Day</label>
           <p class="text-muted mb-2" style="font-size:0.85rem">Choose which day your week starts</p>
