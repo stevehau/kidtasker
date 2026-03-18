@@ -22,7 +22,7 @@ const App = (() => {
   function setActiveNav(route) {
     let navRoute = route;
     if (route === 'scanner') navRoute = 'submit';
-    if (route === 'admin' || route === 'children' || route === 'checklist') navRoute = 'settings';
+    if (route === 'admin' || route === 'children' || route === 'checklist' || route === 'releases') navRoute = 'settings';
     document.querySelectorAll('.nav-link').forEach(link => {
       link.classList.toggle('active', link.dataset.route === navRoute);
     });
@@ -199,6 +199,9 @@ const App = (() => {
         break;
       case 'help':
         Views.renderHelp();
+        break;
+      case 'releases':
+        Views.renderReleaseNotes();
         break;
       default:
         window.location.hash = '#/dashboard';

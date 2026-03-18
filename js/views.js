@@ -2398,8 +2398,9 @@ const Views = (() => {
 
       <!-- Help & Legal -->
       <div class="card">
-        <div style="display:flex;gap:16px;font-size:0.85rem">
-          <a href="help.html" target="_blank">Getting Started Guide</a>
+        <div style="display:flex;gap:16px;font-size:0.85rem;flex-wrap:wrap">
+          <a href="#/help">Getting Started</a>
+          <a href="#/releases">Release Notes</a>
           <a href="privacy.html" target="_blank">Privacy Policy</a>
           <a href="terms.html" target="_blank">Terms of Use</a>
         </div>
@@ -3452,6 +3453,116 @@ const Views = (() => {
     `;
   }
 
+  // ---- Release Notes ----
+  const RELEASE_NOTES = [
+    {
+      version: '1.5.0',
+      date: '2026-03-18',
+      title: 'N/A Task Notation & Camera Scan Beta',
+      items: [
+        'New "Not Applicable" task status — circle both child and parent checkboxes to mark a task as N/A when it no longer applies mid-week',
+        'OCR now detects circled boxes using ring ink density analysis and classifies them as N/A automatically',
+        'N/A tasks are excluded from all completion rates, analytics, and weekly scores',
+        'PDF worksheet footer now shows a legend explaining all three notations: check = Done, empty = Not Done, circled = N/A',
+        'Camera Scan beta feature — use your smartphone camera to scan worksheets directly in the app (enable in Settings > Beta Features)',
+        'Scan overlay now shows by default after processing, with color-coded detection markers (green/red/yellow)',
+        'Open Graph image and meta tags for rich link previews when sharing via SMS or social media',
+        'Account Owner role — the person who created the family is labeled as Owner and cannot be removed by other parents',
+        'PDF blank rows no longer show a default priority selection',
+      ]
+    },
+    {
+      version: '1.4.0',
+      date: '2026-03-15',
+      title: 'Analytics & Help Improvements',
+      items: [
+        'Dual parent/child line graphs in analytics showing completion over time',
+        'Category chart sorted by rate (descending), with "Other" always last',
+        'Smart analytics date range defaults to earliest data point or 1 year ago',
+        'Detailed breakdown table with grouped "Completed" header and N/A trend for less than 2 weeks of data',
+        'In-app Getting Started guide accessible from the nav bar',
+        'First-time users now land on the Help page after login',
+        'Dashboard buttons renamed: "Preview Worksheet", "View Analytics"',
+        'Age-based default tasks for three groups (4\u20136, 7\u201311, 12+) including Screen Time',
+        'Add Task button is disabled until a task name and at least one day are selected',
+      ]
+    },
+    {
+      version: '1.3.0',
+      date: '2026-03-10',
+      title: 'Child Checkbox OCR & Data Export',
+      items: [
+        'Full child checkbox OCR — child-reported checkboxes are now scanned with the same rigor as parent-reported',
+        'CSV data export per child from Settings with categories, tasks, and alternating child/parent columns',
+        'Results entry page now shows dual Child/Parent columns with separate checkboxes',
+        'Ad-hoc blank row detection — marks on non-pre-printed task rows are detected and saved',
+        'Editable task names for ad-hoc rows during review',
+      ]
+    },
+    {
+      version: '1.2.0',
+      date: '2026-03-01',
+      title: 'Multi-Parent Support & Invites',
+      items: [
+        'Invite system — create a shareable link to invite another parent to your family',
+        'Invited parents get full access to manage children, worksheets, and settings',
+        'Pending invite management with expiration and revocation',
+        'Parent invite acceptance flow with automatic family joining',
+      ]
+    },
+    {
+      version: '1.1.0',
+      date: '2026-02-20',
+      title: 'OCR & Worksheet Enhancements',
+      items: [
+        'Registration marks for perspective-corrected OCR alignment',
+        'QR code on worksheets for automatic form identification',
+        'Bilinear interpolation for sub-pixel accurate checkbox sampling',
+        'Color-aware ink detection filtering out printed borders from handwritten marks',
+        'Gamification banner with weekly score history chart on printed worksheets',
+        'Reward images based on last week\'s performance',
+      ]
+    },
+    {
+      version: '1.0.0',
+      date: '2026-02-01',
+      title: 'Initial Release',
+      items: [
+        'Weekly checklist creation with customizable tasks, categories, priorities, and applicable days',
+        'Landscape PDF worksheet generation with child/parent dual checkboxes',
+        'Basic OCR scanning with checkbox detection',
+        'Analytics dashboard with completion rates, category breakdown, and day-of-week charts',
+        'Firebase authentication with email/password login',
+        'Firestore cloud storage with localStorage fallback',
+      ]
+    },
+  ];
+
+  function renderReleaseNotes() {
+    $main().innerHTML = html`
+      <div class="page-header">
+        <h1 class="page-title">Release Notes</h1>
+      </div>
+
+      ${RELEASE_NOTES.map((release, i) => html`
+        <div class="card" style="${i === 0 ? 'border-left:3px solid #4a6cf7' : ''}">
+          <div class="card-title" style="display:flex;justify-content:space-between;align-items:baseline">
+            <span>v${release.version} &mdash; ${release.title}</span>
+            <span class="text-muted" style="font-size:0.8rem;font-weight:normal">${new Date(release.date + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
+          </div>
+          ${i === 0 ? '<span class="badge badge-info" style="margin-bottom:10px;display:inline-block;font-size:0.7rem">Latest</span>' : ''}
+          <ul style="margin:0;padding-left:20px;line-height:1.8;font-size:0.9rem">
+            ${release.items.map(item => `<li>${item}</li>`).join('')}
+          </ul>
+        </div>
+      `).join('')}
+
+      <div style="text-align:center;padding:16px 0">
+        <a href="#/settings" class="btn btn-outline">Back to Settings</a>
+      </div>
+    `;
+  }
+
   // ---- Public API ----
   return {
     renderLogin,
@@ -3469,6 +3580,7 @@ const Views = (() => {
     renderAdmin: renderSettings,
     renderSettings,
     renderInviteAccept,
-    renderHelp
+    renderHelp,
+    renderReleaseNotes,
   };
 })();
