@@ -85,7 +85,7 @@ const PDFGenerator = (() => {
       const applicable = item.daysApplicable || days;
       for (const d of applicable) {
         const r = item.results && item.results[d];
-        if (r) {
+        if (r && !r.notApplicable) {
           stats[pri].total++;
           stats.all.total++;
           if (r.confirmed) {
@@ -542,6 +542,52 @@ const PDFGenerator = (() => {
 
   function drawFooter(doc, worksheet) {
     const y = PAGE_H - MARGIN + 1;
+
+    // Notation legend — between table and footer line
+    const legendY = y - 9;
+    doc.setTextColor(120, 120, 120);
+    doc.setFontSize(5.5);
+    doc.setFont('helvetica', 'normal');
+
+    const legendStartX = MARGIN + 6;
+    let lx = legendStartX;
+
+    // Checkmark example
+    doc.setDrawColor(160, 160, 160);
+    doc.setLineWidth(0.3);
+    doc.rect(lx, legendY - 2.5, 3.5, 3.5);
+    // Draw a small checkmark inside
+    doc.setDrawColor(60, 60, 60);
+    doc.setLineWidth(0.5);
+    doc.line(lx + 0.6, legendY - 0.3, lx + 1.4, legendY + 0.5);
+    doc.line(lx + 1.4, legendY + 0.5, lx + 2.8, legendY - 1.5);
+    lx += 4.5;
+    doc.setTextColor(120, 120, 120);
+    doc.text('= Done', lx, legendY);
+    lx += 14;
+
+    // Empty box example
+    doc.setDrawColor(160, 160, 160);
+    doc.setLineWidth(0.3);
+    doc.rect(lx, legendY - 2.5, 3.5, 3.5);
+    lx += 4.5;
+    doc.text('= Not Done', lx, legendY);
+    lx += 19;
+
+    // Circled boxes example (N/A)
+    doc.setDrawColor(160, 160, 160);
+    doc.setLineWidth(0.3);
+    doc.rect(lx, legendY - 2.5, 3.5, 3.5);
+    doc.rect(lx + 5, legendY - 2.5, 3.5, 3.5);
+    // Draw circle around both
+    doc.setDrawColor(60, 60, 60);
+    doc.setLineWidth(0.5);
+    doc.ellipse(lx + 4.25, legendY - 0.75, 6.5, 3.5);
+    lx += 13;
+    doc.setTextColor(120, 120, 120);
+    doc.text('= N/A (circle BOTH boxes if task no longer applies)', lx, legendY);
+
+    // Footer line and text
     doc.setDrawColor(200, 200, 200);
     doc.setLineWidth(0.3);
     doc.line(MARGIN, y - 3, MARGIN + CONTENT_W, y - 3);
@@ -568,7 +614,7 @@ const PDFGenerator = (() => {
     layout: {
       PAGE_W, PAGE_H, MARGIN, CONTENT_W,
       COL, CB, CB_P, TOTAL_ROWS,
-      TABLE_HEADER_H: 10, FOOTER_RESERVE: 8,
+      TABLE_HEADER_H: 10, FOOTER_RESERVE: 14,
       REG_MARKS, REG_MARK_SIZE,
     },
 
@@ -604,7 +650,7 @@ const PDFGenerator = (() => {
 
       // Calculate row height to fit on one page
       const tableHeaderH = 9;
-      const footerReserve = 8;
+      const footerReserve = 14;
       const availableH = PAGE_H - MARGIN - footerReserve - (headerEnd - MARGIN) - tableHeaderH;
       const totalRows = TOTAL_ROWS;
       const rowH = Math.min(Math.max(availableH / totalRows, 5.5), 11);

@@ -499,6 +499,39 @@ const OCRProcessor = (() => {
     return true; // genuinely dark mark = pen/pencil ink
   }
 
+  // Ring ink density: fraction of dark pixels in a ring (annulus) around the center
+  // innerHalf = inner radius, outerHalf = outer radius
+  function ringInkDensity(ctx, cx, cy, innerHalf, outerHalf, imgW, imgH, darkThresh) {
+    const rIn = Math.max(1, Math.round(innerHalf));
+    const rOut = Math.max(rIn + 1, Math.round(outerHalf));
+    const x0 = Math.max(0, cx - rOut);
+    const y0 = Math.max(0, cy - rOut);
+    const x1 = Math.min(imgW, cx + rOut);
+    const y1 = Math.min(imgH, cy + rOut);
+    const w = x1 - x0;
+    const h = y1 - y0;
+    if (w <= 0 || h <= 0) return 0;
+    try {
+      const imageData = ctx.getImageData(x0, y0, w, h);
+      const data = imageData.data;
+      let darkCount = 0;
+      let totalCount = 0;
+      for (let py = 0; py < h; py++) {
+        for (let px = 0; px < w; px++) {
+          const dx = (x0 + px) - cx;
+          const dy = (y0 + py) - cy;
+          const dist = Math.sqrt(dx * dx + dy * dy);
+          if (dist >= rIn && dist <= rOut) {
+            totalCount++;
+            const i = (py * w + px) * 4;
+            if (isHandwrittenInk(data[i], data[i + 1], data[i + 2], darkThresh)) darkCount++;
+          }
+        }
+      }
+      return totalCount > 0 ? darkCount / totalCount : 0;
+    } catch (e) { return 0; }
+  }
+
   // Count ink-density: fraction of pixels that are handwritten ink (not blue borders)
   function inkDensity(ctx, cx, cy, halfSize, imgW, imgH, darkThresh) {
     const r = Math.max(1, Math.round(halfSize));
@@ -582,6 +615,14 @@ const OCRProcessor = (() => {
     const diagSizeMm = L.CB_P * 0.45;
     const pDiag = mapper(diagSizeMm, 0);
     const diagHalfPx = Math.max(3, Math.abs(pDiag.x - p1.x));
+
+    // Ring ink detection for N/A circles — ring from 1.0x to 1.8x checkbox half-size
+    const ringInnerMm = L.CB_P * 0.50;  // inner = same as center sampling edge
+    const ringOuterMm = L.CB_P * 0.90;  // outer = just beyond checkbox border
+    const pRingInner = mapper(ringInnerMm, 0);
+    const pRingOuter = mapper(ringOuterMm, 0);
+    const ringInnerPx = Math.max(3, Math.abs(pRingInner.x - p1.x));
+    const ringOuterPx = Math.max(5, Math.abs(pRingOuter.x - p1.x));
 
     // Build debug overlay canvas (copy of scanned image with annotations)
     const debugCanvas = document.createElement('canvas');
@@ -744,11 +785,14 @@ const OCRProcessor = (() => {
         // Combined ink score: max of center fill and diagonal stroke detection
         const combinedInk = Math.max(centerInk, diagInk);
 
+        // Ring ink: detect circle drawn around the checkbox (for N/A notation)
+        const parentRingInk = ringInkDensity(ctx, parentPx.x, parentPx.y, ringInnerPx, ringOuterPx, imgW, imgH, 160);
+
         measurements.push({
           row, day: d, type: 'parent',
           px: parentPx,
           centerBright, surroundBright, contrastDrop, contrastRatio,
-          centerInk, diagInk, combinedInk,
+          centerInk, diagInk, combinedInk, ringInk: parentRingInk,
           mmX: parentCenterMmX, mmY: parentCenterMmY,
         });
 
@@ -766,12 +810,13 @@ const OCRProcessor = (() => {
         const childSurroundBright = (csAbove + csBelow + csLeft + csRight) / 4;
         const childContrastDrop = childSurroundBright - childCenterBright;
         const childContrastRatio = Math.max(0, childContrastDrop) / Math.max(childSurroundBright, 1);
+        const childRingInk = ringInkDensity(ctx, childPx.x, childPx.y, ringInnerPx, ringOuterPx, imgW, imgH, 150);
         measurements.push({
           row, day: d, type: 'child',
           px: childPx,
           centerBright: childCenterBright, surroundBright: childSurroundBright,
           contrastDrop: childContrastDrop, contrastRatio: childContrastRatio,
-          centerInk: childInk, diagInk: childDiagInk, combinedInk: childCombinedInk,
+          centerInk: childInk, diagInk: childDiagInk, combinedInk: childCombinedInk, ringInk: childRingInk,
           mmX: childCenterMmX, mmY: midY,
         });
       }
@@ -788,19 +833,20 @@ const OCRProcessor = (() => {
     // Fixed thresholds — deliberately low to catch any intentional mark
     const INK_THRESHOLD = 0.03;      // 3% ink density = any mark at all
     const CONTRAST_THRESHOLD = 0.02; // 2% contrast = slightly darker than surroundings
+    const RING_INK_THRESHOLD = 0.04; // 4% ring ink = circle drawn around checkbox
 
     // Log all measurements for debugging
-    console.log('[OCR v4] Detection mode: ANY INK = CHECKED (parent + child)');
-    console.log('[OCR v4] Fixed thresholds: ink >= 3%, contrast >= 2%');
+    console.log('[OCR v4] Detection mode: ANY INK = CHECKED, RING INK = N/A');
+    console.log(`[OCR v4] Thresholds: ink >= ${INK_THRESHOLD*100}%, contrast >= ${CONTRAST_THRESHOLD*100}%, ring >= ${RING_INK_THRESHOLD*100}%`);
     console.log('[OCR v4] Parent checkbox measurements:');
     parentMeasurements.forEach(m => {
       const hasInk = m.combinedInk > INK_THRESHOLD || m.contrastRatio > CONTRAST_THRESHOLD;
-      console.log(`  R${m.row}D${m.day}: ${hasInk ? 'CHECKED' : 'empty  '} | contrast=${(m.contrastRatio*100).toFixed(1)}% center=${(m.centerInk*100).toFixed(1)}% diag=${(m.diagInk*100).toFixed(1)}% combined=${(m.combinedInk*100).toFixed(1)}% | bright: center=${m.centerBright.toFixed(0)} surround=${m.surroundBright.toFixed(0)}`);
+      console.log(`  R${m.row}D${m.day}: ${hasInk ? 'CHECKED' : 'empty  '} | contrast=${(m.contrastRatio*100).toFixed(1)}% center=${(m.centerInk*100).toFixed(1)}% diag=${(m.diagInk*100).toFixed(1)}% combined=${(m.combinedInk*100).toFixed(1)}% ring=${(m.ringInk*100).toFixed(1)}% | bright: center=${m.centerBright.toFixed(0)} surround=${m.surroundBright.toFixed(0)}`);
     });
     console.log('[OCR v4] Child checkbox measurements:');
     childMeasurements.forEach(m => {
       const hasInk = m.combinedInk > INK_THRESHOLD || m.contrastRatio > CONTRAST_THRESHOLD;
-      console.log(`  R${m.row}D${m.day}: ${hasInk ? 'CHECKED' : 'empty  '} | contrast=${(m.contrastRatio*100).toFixed(1)}% center=${(m.centerInk*100).toFixed(1)}% diag=${(m.diagInk*100).toFixed(1)}% combined=${(m.combinedInk*100).toFixed(1)}% | bright: center=${m.centerBright.toFixed(0)} surround=${m.surroundBright.toFixed(0)}`);
+      console.log(`  R${m.row}D${m.day}: ${hasInk ? 'CHECKED' : 'empty  '} | contrast=${(m.contrastRatio*100).toFixed(1)}% center=${(m.centerInk*100).toFixed(1)}% diag=${(m.diagInk*100).toFixed(1)}% combined=${(m.combinedInk*100).toFixed(1)}% ring=${(m.ringInk*100).toFixed(1)}% | bright: center=${m.centerBright.toFixed(0)} surround=${m.surroundBright.toFixed(0)}`);
     });
 
     // ---- Classify and draw debug overlay ----
@@ -830,22 +876,32 @@ const OCRProcessor = (() => {
         const childHasContrast = cm && cm.contrastRatio > CONTRAST_THRESHOLD;
         const childChecked = childHasInk || childHasContrast;
 
+        // N/A detection: circle drawn around BOTH boxes
+        // A circle creates significant ink in the ring (perimeter) around the checkbox.
+        // When both child and parent boxes have high ring ink, classify as N/A.
+        const parentRingHigh = pm.ringInk > RING_INK_THRESHOLD;
+        const childRingHigh = cm && cm.ringInk > RING_INK_THRESHOLD;
+        const isNA = parentRingHigh && childRingHigh;
+
         rowResults[dayName] = {
-          completed: parentChecked,
-          confirmed: parentChecked,
-          childCompleted: childChecked,
+          completed: isNA ? false : parentChecked,
+          confirmed: isNA ? false : parentChecked,
+          childCompleted: isNA ? false : childChecked,
+          notApplicable: isNA,
           parentDarkness: pm.combinedInk,
           childDarkness: cm ? cm.combinedInk : 0,
           contrastRatio: pm.contrastRatio,
           centerInk: pm.centerInk,
           diagInk: pm.diagInk,
           combinedInk: pm.combinedInk,
+          ringInk: pm.ringInk,
           centerBright: pm.centerBright,
           surroundBright: pm.surroundBright,
           childContrastRatio: cm ? cm.contrastRatio : 0,
           childCenterInk: cm ? cm.centerInk : 0,
           childDiagInk: cm ? cm.diagInk : 0,
           childCombinedInk: cm ? cm.combinedInk : 0,
+          childRingInk: cm ? cm.ringInk : 0,
         };
 
         // backward compat
@@ -854,11 +910,20 @@ const OCRProcessor = (() => {
 
         // ---- Draw debug markers on overlay ----
         const px = pm.px;
+        // Color: N/A=yellow, checked=green, unchecked=red
+        const parentColor = isNA ? '#ffcc00' : (parentChecked ? '#00ff00' : '#ff0000');
         // Draw center sample zone
-        dbg.strokeStyle = parentChecked ? '#00ff00' : '#ff0000';
+        dbg.strokeStyle = parentColor;
         dbg.lineWidth = 2;
         dbg.strokeRect(px.x - centerHalfPx, px.y - centerHalfPx, centerHalfPx * 2, centerHalfPx * 2);
+        // Draw ring sample zone (shows where circle detection samples)
+        dbg.strokeStyle = isNA ? 'rgba(255,204,0,0.6)' : 'rgba(128,128,128,0.2)';
+        dbg.lineWidth = 1;
+        dbg.beginPath();
+        dbg.arc(px.x, px.y, ringOuterPx, 0, Math.PI * 2);
+        dbg.stroke();
         // Draw crosshair
+        dbg.strokeStyle = parentColor;
         dbg.beginPath();
         dbg.moveTo(px.x - centerHalfPx - 2, px.y);
         dbg.lineTo(px.x + centerHalfPx + 2, px.y);
@@ -874,21 +939,29 @@ const OCRProcessor = (() => {
         dbg.moveTo(px.x + diagHalfPx, px.y - diagHalfPx);
         dbg.lineTo(px.x - diagHalfPx, px.y + diagHalfPx);
         dbg.stroke();
-        // Label with contrast/center/diag values
+        // Label with contrast/center/diag/ring values
         dbg.font = `${Math.max(8, Math.round(imgW / 300))}px monospace`;
-        dbg.fillStyle = parentChecked ? '#00ff00' : '#ff0000';
+        dbg.fillStyle = parentColor;
         dbg.fillText(
-          `c${(pm.contrastRatio * 100).toFixed(0)} i${(pm.centerInk * 100).toFixed(0)} d${(pm.diagInk * 100).toFixed(0)}`,
+          `${isNA ? 'N/A ' : ''}c${(pm.contrastRatio * 100).toFixed(0)} i${(pm.centerInk * 100).toFixed(0)} d${(pm.diagInk * 100).toFixed(0)} r${(pm.ringInk * 100).toFixed(0)}`,
           px.x + centerHalfPx + 3,
           px.y - 2
         );
 
-        // Draw child checkbox marker with checked/unchecked coloring
+        // Draw child checkbox marker
         if (cm) {
-          dbg.strokeStyle = childChecked ? '#00ccff' : 'rgba(255,165,0,0.5)';
-          dbg.lineWidth = childChecked ? 2 : 1;
+          const childColor = isNA ? '#ffcc00' : (childChecked ? '#00ccff' : 'rgba(255,165,0,0.5)');
+          dbg.strokeStyle = childColor;
+          dbg.lineWidth = (isNA || childChecked) ? 2 : 1;
           dbg.strokeRect(cm.px.x - centerHalfPx, cm.px.y - centerHalfPx, centerHalfPx * 2, centerHalfPx * 2);
+          // Ring sample zone for child
+          dbg.strokeStyle = isNA ? 'rgba(255,204,0,0.6)' : 'rgba(128,128,128,0.2)';
+          dbg.lineWidth = 1;
+          dbg.beginPath();
+          dbg.arc(cm.px.x, cm.px.y, ringOuterPx, 0, Math.PI * 2);
+          dbg.stroke();
           // Crosshair for child
+          dbg.strokeStyle = childColor;
           dbg.beginPath();
           dbg.moveTo(cm.px.x - centerHalfPx - 2, cm.px.y);
           dbg.lineTo(cm.px.x + centerHalfPx + 2, cm.px.y);
@@ -897,9 +970,9 @@ const OCRProcessor = (() => {
           dbg.stroke();
           // Label
           dbg.font = `${Math.max(8, Math.round(imgW / 300))}px monospace`;
-          dbg.fillStyle = childChecked ? '#00ccff' : 'rgba(255,165,0,0.5)';
+          dbg.fillStyle = childColor;
           dbg.fillText(
-            `c${(cm.contrastRatio * 100).toFixed(0)} i${(cm.centerInk * 100).toFixed(0)} d${(cm.diagInk * 100).toFixed(0)}`,
+            `${isNA ? 'N/A ' : ''}c${(cm.contrastRatio * 100).toFixed(0)} i${(cm.centerInk * 100).toFixed(0)} d${(cm.diagInk * 100).toFixed(0)} r${(cm.ringInk * 100).toFixed(0)}`,
             cm.px.x + centerHalfPx + 3,
             cm.px.y + 10
           );

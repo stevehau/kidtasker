@@ -1243,15 +1243,23 @@ const Views = (() => {
                   const dayResult = item.results && item.results[d];
                   const parentChecked = dayResult && dayResult.completed;
                   const childChecked = dayResult && dayResult.childCompleted;
+                  const isNA = dayResult && dayResult.notApplicable;
                   const applicable = !item.daysApplicable || item.daysApplicable.includes(d);
                   if (!applicable) {
                     return `<td class="text-center" style="background:#f0f0f0;padding:2px">-</td><td class="text-center" style="background:#f0f0f0;padding:2px;border-left:1px solid #eee">-</td>`;
                   }
-                  return `<td class="text-center" style="padding:2px">
+                  if (isNA) {
+                    return `<td colspan="2" class="text-center result-na-cell" data-item="${idx}" data-day="${d}" style="padding:2px;background:#fff3cd;cursor:pointer;font-size:0.7rem;font-weight:600;color:#856404;border-left:1px solid #eee" title="Click to restore">
+                      N/A
+                      <input type="hidden" class="result-na-flag" data-item="${idx}" data-day="${d}" value="1">
+                    </td>`;
+                  }
+                  return `<td class="text-center" style="padding:2px;position:relative">
                     <input type="checkbox" class="result-check-child" data-item="${idx}" data-day="${d}" ${childChecked ? 'checked' : ''}>
                   </td>
-                  <td class="text-center" style="padding:2px;border-left:1px solid #eee">
+                  <td class="text-center" style="padding:2px;border-left:1px solid #eee;position:relative">
                     <input type="checkbox" class="result-check" data-item="${idx}" data-day="${d}" ${parentChecked ? 'checked' : ''}>
+                    <input type="hidden" class="result-na-flag" data-item="${idx}" data-day="${d}" value="0">
                   </td>`;
                 }).join('')}
               </tr>
@@ -1271,6 +1279,7 @@ const Views = (() => {
           <button class="btn btn-outline btn-sm" id="btn-check-all">Check All (Parent)</button>
           <button class="btn btn-outline btn-sm" id="btn-uncheck-all">Uncheck All (Parent)</button>
         </div>
+        <p class="text-muted mt-2" style="font-size:0.78rem">To mark a task as N/A for a day, right-click (or long-press) any checkbox cell. Click an N/A cell to restore it.</p>
       </div>
     `;
 
@@ -1281,21 +1290,104 @@ const Views = (() => {
     $('#btn-uncheck-all').addEventListener('click', () => {
       document.querySelectorAll('.result-check').forEach(cb => cb.checked = false);
     });
-    // Save results (including ad-hoc rows with task names, child + parent)
+
+    // N/A toggle: click an N/A cell to restore to checkboxes
+    document.querySelectorAll('.result-na-cell').forEach(cell => {
+      cell.addEventListener('click', () => {
+        const idx = cell.dataset.item;
+        const d = cell.dataset.day;
+        // Replace the N/A cell with two checkbox cells
+        const newChildTd = document.createElement('td');
+        newChildTd.className = 'text-center';
+        newChildTd.style.cssText = 'padding:2px;position:relative';
+        newChildTd.innerHTML = `<input type="checkbox" class="result-check-child" data-item="${idx}" data-day="${d}">`;
+        const newParentTd = document.createElement('td');
+        newParentTd.className = 'text-center';
+        newParentTd.style.cssText = 'padding:2px;border-left:1px solid #eee;position:relative';
+        newParentTd.innerHTML = `<input type="checkbox" class="result-check" data-item="${idx}" data-day="${d}"><input type="hidden" class="result-na-flag" data-item="${idx}" data-day="${d}" value="0">`;
+        // Add right-click handler to new cells
+        [newChildTd, newParentTd].forEach(td => {
+          td.addEventListener('contextmenu', (e) => { e.preventDefault(); markCellNA(idx, d, td); });
+        });
+        cell.parentNode.insertBefore(newChildTd, cell);
+        cell.parentNode.insertBefore(newParentTd, cell);
+        cell.remove();
+      });
+    });
+
+    // Right-click to mark N/A on checkbox cells
+    function markCellNA(itemIdx, day, clickedTd) {
+      const row = clickedTd.closest('tr');
+      // Find both child and parent tds for this day
+      const childCb = row.querySelector(`.result-check-child[data-item="${itemIdx}"][data-day="${day}"]`);
+      const parentCb = row.querySelector(`.result-check[data-item="${itemIdx}"][data-day="${day}"]`);
+      if (!childCb || !parentCb) return;
+      const childTd = childCb.closest('td');
+      const parentTd = parentCb.closest('td');
+      // Create N/A cell
+      const naTd = document.createElement('td');
+      naTd.colSpan = 2;
+      naTd.className = 'text-center result-na-cell';
+      naTd.dataset.item = itemIdx;
+      naTd.dataset.day = day;
+      naTd.style.cssText = 'padding:2px;background:#fff3cd;cursor:pointer;font-size:0.7rem;font-weight:600;color:#856404;border-left:1px solid #eee';
+      naTd.title = 'Click to restore';
+      naTd.innerHTML = `N/A<input type="hidden" class="result-na-flag" data-item="${itemIdx}" data-day="${day}" value="1">`;
+      naTd.addEventListener('click', () => {
+        // Restore checkboxes
+        const newChildTd = document.createElement('td');
+        newChildTd.className = 'text-center';
+        newChildTd.style.cssText = 'padding:2px;position:relative';
+        newChildTd.innerHTML = `<input type="checkbox" class="result-check-child" data-item="${itemIdx}" data-day="${day}">`;
+        const newParentTd = document.createElement('td');
+        newParentTd.className = 'text-center';
+        newParentTd.style.cssText = 'padding:2px;border-left:1px solid #eee;position:relative';
+        newParentTd.innerHTML = `<input type="checkbox" class="result-check" data-item="${itemIdx}" data-day="${day}"><input type="hidden" class="result-na-flag" data-item="${itemIdx}" data-day="${day}" value="0">`;
+        [newChildTd, newParentTd].forEach(td => {
+          td.addEventListener('contextmenu', (e) => { e.preventDefault(); markCellNA(itemIdx, day, td); });
+        });
+        naTd.parentNode.insertBefore(newChildTd, naTd);
+        naTd.parentNode.insertBefore(newParentTd, naTd);
+        naTd.remove();
+      });
+      childTd.parentNode.insertBefore(naTd, childTd);
+      childTd.remove();
+      parentTd.remove();
+    }
+
+    // Attach right-click handlers to all checkbox cells
+    document.querySelectorAll('.result-check, .result-check-child').forEach(cb => {
+      cb.closest('td').addEventListener('contextmenu', (e) => {
+        e.preventDefault();
+        markCellNA(cb.dataset.item, cb.dataset.day, cb.closest('td'));
+      });
+    });
+    // Save results (including ad-hoc rows with task names, child + parent, N/A)
     $('#btn-save-results').addEventListener('click', async () => {
       const items = ws.items.map((item, idx) => {
         const results = {};
         days.forEach(d => {
+          const naFlag = document.querySelector(`.result-na-flag[data-item="${idx}"][data-day="${d}"]`);
+          const isNA = naFlag && naFlag.value === '1';
           const parentCb = document.querySelector(`.result-check[data-item="${idx}"][data-day="${d}"]`);
           const childCb = document.querySelector(`.result-check-child[data-item="${idx}"][data-day="${d}"]`);
-          if (parentCb) {
-            // Preserve existing OCR metadata, overlay manual edits
-            const existing = (item.results && item.results[d]) || {};
+          // Preserve existing OCR metadata, overlay manual edits
+          const existing = (item.results && item.results[d]) || {};
+          if (isNA) {
+            results[d] = {
+              ...existing,
+              completed: false,
+              confirmed: false,
+              childCompleted: false,
+              notApplicable: true,
+            };
+          } else if (parentCb) {
             results[d] = {
               ...existing,
               completed: parentCb.checked,
               confirmed: parentCb.checked,
               childCompleted: childCb ? childCb.checked : (existing.childCompleted || false),
+              notApplicable: false,
             };
           }
         });
@@ -1601,39 +1693,44 @@ const Views = (() => {
           ${thresholdInfo ? `<br><small>${thresholdInfo}</small>` : ''}
           <br><strong>Please review and correct</strong> the results below, then save.
         </p>
-        <div id="debug-overlay-container" class="hidden" style="margin-bottom:16px">
+        <div id="debug-overlay-container" style="margin-bottom:16px">
           <p class="text-muted" style="font-size:0.8rem;margin-bottom:4px">
-            <strong>Debug overlay:</strong> Green = checked, Red = unchecked. Numbers show contrast%/ink%.
+            <strong>Scan overlay:</strong>
+            <span style="color:#00ff00">Green</span> = checked,
+            <span style="color:#ff0000">Red</span> = unchecked,
+            <span style="color:#ffcc00">Yellow</span> = N/A (circled).
+            Labels: c=contrast i=ink d=diagonal r=ring
           </p>
           <div style="max-width:100%;overflow:auto;border:1px solid #ddd;border-radius:var(--radius)">
             <canvas id="debug-overlay-canvas" style="max-width:100%;height:auto"></canvas>
           </div>
+          <button class="btn btn-outline btn-sm mt-1" id="btn-toggle-debug" style="font-size:0.75rem">Hide Scan Overlay</button>
         </div>
         <div style="display:flex;gap:8px;align-items:center;margin-bottom:12px">
           <button class="btn btn-primary" id="btn-goto-results">Review &amp; Edit Results</button>
-          <button class="btn btn-outline btn-sm" id="btn-toggle-debug">Show Debug Overlay</button>
         </div>
       `;
 
-      // Wire up debug overlay toggle
+      // Show scan overlay by default, toggle to hide
       const debugToggle = $('#btn-toggle-debug');
       const debugContainer = $('#debug-overlay-container');
-      if (debugToggle && detailedResult.debugCanvas) {
-        debugToggle.addEventListener('click', () => {
-          const isHidden = debugContainer.classList.contains('hidden');
-          debugContainer.classList.toggle('hidden');
-          debugToggle.textContent = isHidden ? 'Hide Debug Overlay' : 'Show Debug Overlay';
-          if (isHidden) {
-            // Copy debug canvas into the display canvas
-            const displayCanvas = $('#debug-overlay-canvas');
-            displayCanvas.width = detailedResult.debugCanvas.width;
-            displayCanvas.height = detailedResult.debugCanvas.height;
-            const dctx = displayCanvas.getContext('2d');
-            dctx.drawImage(detailedResult.debugCanvas, 0, 0);
-          }
-        });
-      } else if (debugToggle) {
-        debugToggle.style.display = 'none';
+      if (detailedResult.debugCanvas) {
+        // Render the overlay canvas immediately
+        const displayCanvas = $('#debug-overlay-canvas');
+        displayCanvas.width = detailedResult.debugCanvas.width;
+        displayCanvas.height = detailedResult.debugCanvas.height;
+        const dctx = displayCanvas.getContext('2d');
+        dctx.drawImage(detailedResult.debugCanvas, 0, 0);
+
+        if (debugToggle) {
+          debugToggle.addEventListener('click', () => {
+            const isVisible = !debugContainer.classList.contains('hidden');
+            debugContainer.classList.toggle('hidden');
+            debugToggle.textContent = isVisible ? 'Show Scan Overlay' : 'Hide Scan Overlay';
+          });
+        }
+      } else if (debugContainer) {
+        debugContainer.classList.add('hidden');
       }
 
       // Save preliminary OCR results
@@ -1869,6 +1966,9 @@ const Views = (() => {
 
         APP_CONFIG.daysShort.forEach(day => {
           if (item.results && item.results[day]) {
+            // Skip N/A tasks — they don't count as either completed or missed
+            if (item.results[day].notApplicable) return;
+
             totalTasks++;
             byCategory[cat].total++;
             byDay[day].total++;
@@ -1908,7 +2008,7 @@ const Views = (() => {
         firstHalf.forEach(ws => {
           ws.items.filter(i => (i.category || 'Other') === cat).forEach(item => {
             APP_CONFIG.daysShort.forEach(d => {
-              if (item.results && item.results[d]) {
+              if (item.results && item.results[d] && !item.results[d].notApplicable) {
                 firstTotal++;
                 if (item.results[d].completed) firstCompleted++;
               }
@@ -1919,7 +2019,7 @@ const Views = (() => {
         secondHalf.forEach(ws => {
           ws.items.filter(i => (i.category || 'Other') === cat).forEach(item => {
             APP_CONFIG.daysShort.forEach(d => {
-              if (item.results && item.results[d]) {
+              if (item.results && item.results[d] && !item.results[d].notApplicable) {
                 secondTotal++;
                 if (item.results[d].completed) secondCompleted++;
               }
@@ -2469,11 +2569,15 @@ const Views = (() => {
               const ws = col.ws;
               const item = (ws.items || []).find(i => i.text === task.text);
               const dayResult = item && item.results && item.results[col.day];
-              const childVal = dayResult && dayResult.childCompleted ? 1 : 0;
-              const parentVal = dayResult && dayResult.completed ? 1 : 0;
               // Only output values if this task existed in this worksheet
               if (item) {
-                row.push(childVal, parentVal);
+                if (dayResult && dayResult.notApplicable) {
+                  row.push('N/A', 'N/A');
+                } else {
+                  const childVal = dayResult && dayResult.childCompleted ? 1 : 0;
+                  const parentVal = dayResult && dayResult.completed ? 1 : 0;
+                  row.push(childVal, parentVal);
+                }
               } else {
                 row.push('', '');
               }
